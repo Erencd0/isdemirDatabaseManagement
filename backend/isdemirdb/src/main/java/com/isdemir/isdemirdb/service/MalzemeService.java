@@ -7,15 +7,14 @@ import org.springframework.stereotype.Service;
 import com.isdemir.isdemirdb.entity.Malzeme;
 import com.isdemir.isdemirdb.repository.MalzemeRepository;
 
+import lombok.RequiredArgsConstructor;
+
 // Malzeme listeleme is mantigi bu katmanda. Controller sadece bu servisi cagirir.
 @Service
+@RequiredArgsConstructor
 public class MalzemeService {
 
     private final MalzemeRepository malzemeRepository;
-
-    public MalzemeService(MalzemeRepository malzemeRepository) {
-        this.malzemeRepository = malzemeRepository;
-    }
 
     // Benzersiz malzeme turlerini listeler (combobox icin)
     public List<String> turler() {

@@ -13,15 +13,14 @@ import com.isdemir.isdemirdb.exception.GecersizKimlikException;
 import com.isdemir.isdemirdb.exception.YetkisizGirisException;
 import com.isdemir.isdemirdb.repository.KullaniciRepository;
 
+import lombok.RequiredArgsConstructor;
+
 // Login is mantiginin tamami bu katmanda. Controller sadece bu servisi cagirir.
 @Service
+@RequiredArgsConstructor
 public class AuthService {
 
     private final KullaniciRepository kullaniciRepository;
-
-    public AuthService(KullaniciRepository kullaniciRepository) {
-        this.kullaniciRepository = kullaniciRepository;
-    }
 
     public LoginResponse login(LoginRequest request) {
 

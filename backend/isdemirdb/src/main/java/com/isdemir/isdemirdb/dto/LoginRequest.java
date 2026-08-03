@@ -2,6 +2,13 @@ package com.isdemir.isdemirdb.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+@Getter
+@Setter
+@NoArgsConstructor
 public class LoginRequest {
 
     @JsonProperty("kullanici_adi")
@@ -9,20 +16,4 @@ public class LoginRequest {
 
     @JsonProperty("kullanici_parola")
     private String kullaniciParola;
-
-    public String getKullaniciAdi() {
-        return kullaniciAdi;
-    }
-
-    public void setKullaniciAdi(String kullaniciAdi) {
-        this.kullaniciAdi = kullaniciAdi;
-    }
-
-    public String getKullaniciParola() {
-        return kullaniciParola;
-    }
-
-    public void setKullaniciParola(String kullaniciParola) {
-        this.kullaniciParola = kullaniciParola;
-    }
 }

@@ -236,7 +236,9 @@ function Dashboard() {
         body: JSON.stringify(payload),
       })
       if (!res.ok) {
-        setMalzemeMesaj({ tip: 'hata', metin: 'Malzeme eklenemedi (sunucu hatası)' })
+        // Backend dogrulama hatasi (400) mesajini goster; yoksa genel hata
+        const metin = await res.text().catch(() => '')
+        setMalzemeMesaj({ tip: 'hata', metin: metin || 'Malzeme eklenemedi' })
         return
       }
       const kaydedilen = await res.json()
@@ -835,7 +837,9 @@ function MalzemeDuzenleModal({ satir, dokumId, kullaniciId, onKapat, onKaydedild
         body: JSON.stringify(payload),
       })
       if (!res.ok) {
-        setHata('Güncellenemedi (sunucu hatası)')
+        // Backend dogrulama hatasi (400) mesajini goster; yoksa genel hata
+        const metin = await res.text().catch(() => '')
+        setHata(metin || 'Güncellenemedi')
         return
       }
       const guncel = await res.json()

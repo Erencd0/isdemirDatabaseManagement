@@ -20,17 +20,16 @@ import com.isdemir.isdemirdb.entity.Dokum;
 import com.isdemir.isdemirdb.entity.MalzemeKullanim;
 import com.isdemir.isdemirdb.service.DokumService;
 
+import lombok.RequiredArgsConstructor;
+
 // Is mantigi DokumService'te; hata -> HTTP kodu cevrimi GlobalExceptionHandler'da.
 @RestController
 @RequestMapping("/api")
 @CrossOrigin(origins = { "http://localhost:5173", "http://localhost:5174" })
+@RequiredArgsConstructor
 public class DokumController {
 
     private final DokumService dokumService;
-
-    public DokumController(DokumService dokumService) {
-        this.dokumService = dokumService;
-    }
 
     // Tum dokumleri listeler
     @GetMapping("/dokum")

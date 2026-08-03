@@ -17,22 +17,17 @@ import com.isdemir.isdemirdb.repository.DokumRepository;
 import com.isdemir.isdemirdb.repository.MalzemeKullanimRepository;
 import com.isdemir.isdemirdb.repository.MalzemeRepository;
 
+import lombok.RequiredArgsConstructor;
+
 // Dokum ve dokume bagli malzeme kullanimlarina ait tum is mantigi bu katmanda.
 // Controller sadece bu servisi cagirir; hata -> HTTP kodu cevrimi GlobalExceptionHandler'da.
 @Service
+@RequiredArgsConstructor
 public class DokumService {
 
     private final DokumRepository dokumRepository;
     private final MalzemeKullanimRepository malzemeKullanimRepository;
     private final MalzemeRepository malzemeRepository;
-
-    public DokumService(DokumRepository dokumRepository,
-            MalzemeKullanimRepository malzemeKullanimRepository,
-            MalzemeRepository malzemeRepository) {
-        this.dokumRepository = dokumRepository;
-        this.malzemeKullanimRepository = malzemeKullanimRepository;
-        this.malzemeRepository = malzemeRepository;
-    }
 
     // Tum dokumleri listeler
     public List<Dokum> tumDokumler() {
@@ -84,8 +79,12 @@ public class DokumService {
     // Bir dokume malzeme ekler. dokumId path'ten alinir, body'deki dokumId ezilir.
     // Dokum yoksa KayitBulunamadiException (-> 404).
     public MalzemeKullanim malzemeEkle(Integer dokumId, MalzemeKullanim malzemeKullanim) {
-        if (!dokumRepository.existsById(dokumId)) {
-            throw new KayitBulunamadiException("Döküm bulunamadı");
+        Dokum dokum = dokumRepository.findById(dokumId)
+                .orElseThrow(() -> new KayitBulunamadiException("Döküm bulunamadı"));
+        // Malzeme, dokumden once verilemez: verilis tarihi dokum zamanindan once olamaz.
+        String zamanHatasi = malzemeZamaniDogrula(dokum, malzemeKullanim.getMalzemeVerilisTarihi());
+        if (zamanHatasi != null) {
+            throw new GecersizVeriException(zamanHatasi);
         }
         malzemeKullanim.setDokumId(dokumId);
         return malzemeKullanimRepository.save(malzemeKullanim);
@@ -98,6 +97,13 @@ public class DokumService {
         MalzemeKullanim mevcut = malzemeKullanimRepository.findById(kullanimId)
                 .filter(m -> dokumId.equals(m.getDokumId()))
                 .orElseThrow(() -> new KayitBulunamadiException("Malzeme kullanımı bulunamadı"));
+        Dokum dokum = dokumRepository.findById(dokumId)
+                .orElseThrow(() -> new KayitBulunamadiException("Döküm bulunamadı"));
+        // Guncellenen verilis tarihi de dokum zamanindan once olamaz.
+        String zamanHatasi = malzemeZamaniDogrula(dokum, gelen.getMalzemeVerilisTarihi());
+        if (zamanHatasi != null) {
+            throw new GecersizVeriException(zamanHatasi);
+        }
         mevcut.setMalzemeKodu(gelen.getMalzemeKodu());
         mevcut.setMiktar(gelen.getMiktar());
         mevcut.setMalzemeVerilisTarihi(gelen.getMalzemeVerilisTarihi());
@@ -157,6 +163,16 @@ public class DokumService {
                     && zamanlar[i].isBefore(zamanlar[i - 1])) {
                 return ZAMAN_ADLARI[i] + " zamanı, " + ZAMAN_ADLARI[i - 1] + " zamanından önce olamaz";
             }
+        }
+        return null;
+    }
+
+    // Malzeme verilis tarihi, dokumun son zamani olan dokum_zamani'ndan once olamaz.
+    // Iki taraftan biri null ise (verilis tarihi verilmemis ya da dokum zamani bos) atlanir.
+    private String malzemeZamaniDogrula(Dokum dokum, LocalDateTime verilisTarihi) {
+        LocalDateTime dokumZamani = dokum.getDokumZamani();
+        if (verilisTarihi != null && dokumZamani != null && verilisTarihi.isBefore(dokumZamani)) {
+            return "Malzeme veriliş tarihi, döküm zamanından önce olamaz";
         }
         return null;
     }

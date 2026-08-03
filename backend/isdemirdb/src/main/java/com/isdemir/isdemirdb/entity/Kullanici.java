@@ -6,9 +6,15 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 @Entity
 @Table(name = "kullanici")
+@Getter
+@Setter
+@NoArgsConstructor
 public class Kullanici {
 
     @Id
@@ -24,39 +30,4 @@ public class Kullanici {
 
     @Column(name = "rol_adi")
     private String rolAdi;
-
-    public Kullanici() {
-    }
-
-    public Integer getKullaniciId() {
-        return kullaniciId;
-    }
-
-    public void setKullaniciId(Integer kullaniciId) {
-        this.kullaniciId = kullaniciId;
-    }
-
-    public String getKullaniciAdi() {
-        return kullaniciAdi;
-    }
-
-    public void setKullaniciAdi(String kullaniciAdi) {
-        this.kullaniciAdi = kullaniciAdi;
-    }
-
-    public String getKullaniciParola() {
-        return kullaniciParola;
-    }
-
-    public void setKullaniciParola(String kullaniciParola) {
-        this.kullaniciParola = kullaniciParola;
-    }
-
-    public String getRolAdi() {
-        return rolAdi;
-    }
-
-    public void setRolAdi(String rolAdi) {
-        this.rolAdi = rolAdi;
-    }
 }

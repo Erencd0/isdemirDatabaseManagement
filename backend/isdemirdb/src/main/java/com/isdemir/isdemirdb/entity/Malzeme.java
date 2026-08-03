@@ -6,9 +6,15 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 @Entity
 @Table(name = "malzeme_tablosu")
+@Getter
+@Setter
+@NoArgsConstructor
 public class Malzeme {
 
     // malzeme_id DB'de sequence (identity) ile uretilir
@@ -28,47 +34,4 @@ public class Malzeme {
 
     @Column(name = "aktif_pasif")
     private Boolean aktifPasif;
-
-    public Malzeme() {
-    }
-
-    public Integer getMalzemeId() {
-        return malzemeId;
-    }
-
-    public void setMalzemeId(Integer malzemeId) {
-        this.malzemeId = malzemeId;
-    }
-
-    public Integer getMalzemeKodu() {
-        return malzemeKodu;
-    }
-
-    public void setMalzemeKodu(Integer malzemeKodu) {
-        this.malzemeKodu = malzemeKodu;
-    }
-
-    public String getMalzemeTuru() {
-        return malzemeTuru;
-    }
-
-    public void setMalzemeTuru(String malzemeTuru) {
-        this.malzemeTuru = malzemeTuru;
-    }
-
-    public String getMalzemeAdi() {
-        return malzemeAdi;
-    }
-
-    public void setMalzemeAdi(String malzemeAdi) {
-        this.malzemeAdi = malzemeAdi;
-    }
-
-    public Boolean getAktifPasif() {
-        return aktifPasif;
-    }
-
-    public void setAktifPasif(Boolean aktifPasif) {
-        this.aktifPasif = aktifPasif;
-    }
 }

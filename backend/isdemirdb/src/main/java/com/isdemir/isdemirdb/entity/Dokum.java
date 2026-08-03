@@ -6,9 +6,15 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 @Entity
 @Table(name = "dokum_tablosu")
+@Getter
+@Setter
+@NoArgsConstructor
 public class Dokum {
 
     // ID DB sequence'i yerine elle atanir (MAX(id)+1), boylece basarisiz
@@ -52,111 +58,4 @@ public class Dokum {
 
     @Column(name = "kullanici_id")
     private Integer kullaniciId;
-
-    public Dokum() {
-    }
-
-    public Integer getDokumId() {
-        return dokumId;
-    }
-
-    public void setDokumId(Integer dokumId) {
-        this.dokumId = dokumId;
-    }
-
-    public Integer getDokumNo() {
-        return dokumNo;
-    }
-
-    public void setDokumNo(Integer dokumNo) {
-        this.dokumNo = dokumNo;
-    }
-
-    public Integer getKonverterNo() {
-        return konverterNo;
-    }
-
-    public void setKonverterNo(Integer konverterNo) {
-        this.konverterNo = konverterNo;
-    }
-
-    public LocalDateTime getHurdaSarjBaslamaZamani() {
-        return hurdaSarjBaslamaZamani;
-    }
-
-    public void setHurdaSarjBaslamaZamani(LocalDateTime hurdaSarjBaslamaZamani) {
-        this.hurdaSarjBaslamaZamani = hurdaSarjBaslamaZamani;
-    }
-
-    public LocalDateTime getHurdaSarjBitisZamani() {
-        return hurdaSarjBitisZamani;
-    }
-
-    public void setHurdaSarjBitisZamani(LocalDateTime hurdaSarjBitisZamani) {
-        this.hurdaSarjBitisZamani = hurdaSarjBitisZamani;
-    }
-
-    public LocalDateTime getAnaUflemeyeBaslamaZamani() {
-        return anaUflemeyeBaslamaZamani;
-    }
-
-    public void setAnaUflemeyeBaslamaZamani(LocalDateTime anaUflemeyeBaslamaZamani) {
-        this.anaUflemeyeBaslamaZamani = anaUflemeyeBaslamaZamani;
-    }
-
-    public LocalDateTime getAnaUflemeBitisZamani() {
-        return anaUflemeBitisZamani;
-    }
-
-    public void setAnaUflemeBitisZamani(LocalDateTime anaUflemeBitisZamani) {
-        this.anaUflemeBitisZamani = anaUflemeBitisZamani;
-    }
-
-    public LocalDateTime getDokumZamani() {
-        return dokumZamani;
-    }
-
-    public void setDokumZamani(LocalDateTime dokumZamani) {
-        this.dokumZamani = dokumZamani;
-    }
-
-    public Integer getShdSicaklik() {
-        return shdSicaklik;
-    }
-
-    public void setShdSicaklik(Integer shdSicaklik) {
-        this.shdSicaklik = shdSicaklik;
-    }
-
-    public Integer getDokumSicaklik() {
-        return dokumSicaklik;
-    }
-
-    public void setDokumSicaklik(Integer dokumSicaklik) {
-        this.dokumSicaklik = dokumSicaklik;
-    }
-
-    public String getLansSkalDurum() {
-        return lansSkalDurum;
-    }
-
-    public void setLansSkalDurum(String lansSkalDurum) {
-        this.lansSkalDurum = lansSkalDurum;
-    }
-
-    public LocalDateTime getKayitZamani() {
-        return kayitZamani;
-    }
-
-    public void setKayitZamani(LocalDateTime kayitZamani) {
-        this.kayitZamani = kayitZamani;
-    }
-
-    public Integer getKullaniciId() {
-        return kullaniciId;
-    }
-
-    public void setKullaniciId(Integer kullaniciId) {
-        this.kullaniciId = kullaniciId;
-    }
 }

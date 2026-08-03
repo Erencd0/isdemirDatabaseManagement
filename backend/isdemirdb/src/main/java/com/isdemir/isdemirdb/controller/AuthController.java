@@ -10,16 +10,15 @@ import com.isdemir.isdemirdb.dto.LoginRequest;
 import com.isdemir.isdemirdb.dto.LoginResponse;
 import com.isdemir.isdemirdb.service.AuthService;
 
+import lombok.RequiredArgsConstructor;
+
 @RestController
 @RequestMapping("/api")
 @CrossOrigin(origins = { "http://localhost:5173", "http://localhost:5174" })
+@RequiredArgsConstructor
 public class AuthController {
 
     private final AuthService authService;
-
-    public AuthController(AuthService authService) {
-        this.authService = authService;
-    }
 
     // Is mantigi AuthService'te; hata -> HTTP kodu cevrimi GlobalExceptionHandler'da.
     @PostMapping("/login")

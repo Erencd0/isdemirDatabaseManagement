@@ -11,17 +11,16 @@ import org.springframework.web.bind.annotation.RestController;
 import com.isdemir.isdemirdb.entity.Malzeme;
 import com.isdemir.isdemirdb.service.MalzemeService;
 
+import lombok.RequiredArgsConstructor;
+
 // Is mantigi MalzemeService'te; controller sadece bu servisi cagirir.
 @RestController
 @RequestMapping("/api")
 @CrossOrigin(origins = { "http://localhost:5173", "http://localhost:5174" })
+@RequiredArgsConstructor
 public class MalzemeController {
 
     private final MalzemeService malzemeService;
-
-    public MalzemeController(MalzemeService malzemeService) {
-        this.malzemeService = malzemeService;
-    }
 
     // Benzersiz malzeme turlerini listeler (combobox icin)
     @GetMapping("/malzeme/turler")

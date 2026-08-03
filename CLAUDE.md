@@ -96,21 +96,4 @@ Login ekranı TEK EKRAN olacak (rol seçimi ayrı ekran DEĞİL):
 
 \- Frontend: React + Tailwind kurulumu tamam, henüz login componenti yazılmadı
 
-/## DASHBOARD FRONTEND YAPILACAKLAR
-!!! once hali hazirdaki frontend temasina bak belirli seyler yaptik ona gore uygun yap!!!
-!!! her bir maddeyi adim adim yapacaksin ve ben izin vermeden digerine gecmeyeceksin once ben kontrol edecegim!!!
-!!! ilk login page yaptiginda login olduktan sonra giris yapildi diye bir sayfaya atiyordu o sayfaya gerek yok artik ama istersen kisa bir loading sekansi koyabilirsin!!!
-
-1- Sayfanin ust kisimlarindan birinde giris yapan kisinin bilgileri ve cikis yap tusu olucak
-
-2- Ana sayfada dokumleri listele ve yeni dokum butonu olacak bu butonlarin altinda ise:
-	dokum_tablosu tablosundaki degerler el ile girilecek yerler olacak (malzeme kodu haric) ve altinda kaydet butonu olucak BU KISIM HER ZAMAN OLACAK YANI BI TUSA BASINCA CIKMAYACAK
-
-3-dokumleri listele butonuna basinca veritabanindaki dokumlerin basit 2-3 bilgisi  pop up bir sekmede gosterilecek ve her dokumun yaninda detay gor butonu olucak buna basilinca ek bir popup acilacak ve basilan dokumun kendi tum detaylari ve malzemeleride gorunecek
-
-4-dokum bilgileri girilen sayfanin altinda ise malzeme ekle sayfasi olacak bu sayfanin hemen ustunde 3 buton olacak Konverter Katki, Pota Katki ve Hurda Katki seklinde once kisi bu butonlara basarak malzeme bilgilerini girecek (sonucta her katkinin mazlemeleri farkli basilana gore malzeme kodu ve isimleri cikicak comboboxta)
-
-5-hemen ardindan secilen katkiya dahil malzeme bilgileri girilecek ve ve bu bilgiler o anki dokume kaydedilecek ve ayrica hemen bu bilgilerin girildigi yerin altindaki malzeme listesinde de gosterilecek
-
-6-bu listedeki malzemlerin saginda buton olucak 2 tane bir tane silmek icin bir tane malzemeyi guncellemek icin
 
