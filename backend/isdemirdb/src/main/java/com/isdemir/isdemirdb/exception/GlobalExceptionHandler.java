@@ -19,4 +19,14 @@ public class GlobalExceptionHandler {
     public ResponseEntity<String> handleYetkisizGiris(YetkisizGirisException ex) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ex.getMessage());
     }
+
+    @ExceptionHandler(GecersizVeriException.class)
+    public ResponseEntity<String> handleGecersizVeri(GecersizVeriException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());
+    }
+
+    @ExceptionHandler(KayitBulunamadiException.class)
+    public ResponseEntity<String> handleKayitBulunamadi(KayitBulunamadiException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ex.getMessage());
+    }
 }
