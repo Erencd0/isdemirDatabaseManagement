@@ -635,25 +635,36 @@ function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {eklenenMalzemeler.map((m) => (
-                    <tr key={m.kullanimId} className="border-b border-gray-100">
-                      <td className="py-2">{KATKI_ETIKET[m._tur] ?? m._tur ?? '-'}</td>
-                      <td className="py-2">{m.malzemeKodu}</td>
-                      <td className="py-2">{m.malzemeAdi ?? '-'}</td>
-                      <td className="py-2">{m.miktar}</td>
-                      <td className="py-2">{tarihGoster(m.malzemeVerilisTarihi)}</td>
-                      <td className="py-2">
-                        <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="outline" onClick={() => setDuzenlenen(m)}>
-                            Güncelle
-                          </Button>
-                          <Button size="sm" variant="secondary" onClick={() => malzemeSil(m.kullanimId)}>
-                            Sil
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {eklenenMalzemeler.map((m) =>
+                    duzenlenen?.kullanimId === m.kullanimId ? (
+                      <MalzemeSatirDuzenle
+                        key={m.kullanimId}
+                        satir={m}
+                        dokumId={kayitliDokum.dokumId}
+                        kullaniciId={kullaniciId}
+                        onKapat={() => setDuzenlenen(null)}
+                        onKaydedildi={malzemeGuncellendi}
+                      />
+                    ) : (
+                      <tr key={m.kullanimId} className="border-b border-gray-100">
+                        <td className="py-2">{KATKI_ETIKET[m._tur] ?? m._tur ?? '-'}</td>
+                        <td className="py-2">{m.malzemeKodu}</td>
+                        <td className="py-2">{m.malzemeAdi ?? '-'}</td>
+                        <td className="py-2">{m.miktar}</td>
+                        <td className="py-2">{tarihGoster(m.malzemeVerilisTarihi)}</td>
+                        <td className="py-2">
+                          <div className="flex justify-end gap-2">
+                            <Button size="sm" variant="outline" onClick={() => setDuzenlenen(m)}>
+                              Güncelle
+                            </Button>
+                            <Button size="sm" variant="secondary" onClick={() => malzemeSil(m.kullanimId)}>
+                              Sil
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ),
+                  )}
                 </tbody>
               </table>
             )}
@@ -754,30 +765,15 @@ function Dashboard() {
           </div>
         )}
       </Modal>
-
-      {/* 6. ADIM: Malzeme guncelleme modali */}
-      <Modal
-        open={duzenlenen !== null}
-        onClose={() => setDuzenlenen(null)}
-        title="Malzeme Güncelle"
-      >
-        {duzenlenen && (
-          <MalzemeDuzenleModal
-            satir={duzenlenen}
-            dokumId={kayitliDokum.dokumId}
-            kullaniciId={kullaniciId}
-            onKapat={() => setDuzenlenen(null)}
-            onKaydedildi={malzemeGuncellendi}
-          />
-        )}
-      </Modal>
     </div>
   )
 }
 
-// 6. ADIM: Malzeme guncelleme formu. Satirin ait oldugu katkinin (_tur) malzemelerini
-// yukler, mevcut degerleri onceden doldurur, PUT ile gunceller.
-function MalzemeDuzenleModal({ satir, dokumId, kullaniciId, onKapat, onKaydedildi }) {
+// 6. ADIM: Malzeme guncelleme - listedeki satirin KENDI uzerinde (inline) yapilir.
+// Duzenlenen satir bir <tr> olarak render edilir; hucreler input/select'e donusur.
+// Satirin ait oldugu katkinin (_tur) malzemelerini yukler, mevcut degerleri onceden
+// doldurur, PUT ile gunceller.
+function MalzemeSatirDuzenle({ satir, dokumId, kullaniciId, onKapat, onKaydedildi }) {
   const [tur, setTur] = useState(satir._tur ?? '')
   const [secenekler, setSecenekler] = useState([])
   const [yukleniyor, setYukleniyor] = useState(false)
@@ -792,7 +788,7 @@ function MalzemeDuzenleModal({ satir, dokumId, kullaniciId, onKapat, onKaydedild
   const [kaydediliyor, setKaydediliyor] = useState(false)
   const [hata, setHata] = useState('')
 
-  // Acilista, satirin katkisindaki malzemeleri combobox'a yukle
+  // Katki degisince o katkinin malzemelerini combobox'a yukle (acilista da calisir)
   useEffect(() => {
     if (!tur) return
     let iptal = false
@@ -854,81 +850,86 @@ function MalzemeDuzenleModal({ satir, dokumId, kullaniciId, onKapat, onKaydedild
     }
   }
 
+  // Malzeme Adi hucresinde secili malzemenin adi gosterilir (combobox degistikce guncellenir)
+  const seciliAd =
+    secenekler.find((m) => String(m.malzemeKodu) === form.malzemeKodu)?.malzemeAdi ??
+    satir.malzemeAdi ??
+    '-'
+
+  const hucreInput =
+    'w-full rounded-lg border border-gray-300 bg-white px-2 py-1 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-gray-100'
+
   return (
-    <div className="space-y-4">
-      {/* Katki degistirme (istenirse baska bir katkinin malzemesi secilebilir) */}
-      <div>
-        <label className="mb-1 block text-sm font-medium text-gray-700">Katkı</label>
-        <div className="flex flex-wrap gap-2">
-          {KATKILAR.map((k) => (
-            <Button
-              key={k.tur}
-              size="sm"
-              variant={tur === k.tur ? 'primary' : 'outline'}
-              onClick={() => {
-                setTur(k.tur)
-                setForm((f) => ({ ...f, malzemeKodu: '' }))
-              }}
-            >
-              {k.label}
+    <>
+      <tr className="border-b border-gray-100 bg-brand-50/50 align-top">
+        <td className="py-2 pr-2">
+          <select
+            value={tur}
+            onChange={(e) => {
+              setTur(e.target.value)
+              setForm((f) => ({ ...f, malzemeKodu: '' }))
+            }}
+            className={hucreInput}
+          >
+            {KATKILAR.map((k) => (
+              <option key={k.tur} value={k.tur}>
+                {k.label}
+              </option>
+            ))}
+          </select>
+        </td>
+        <td className="py-2 pr-2">
+          <select
+            value={form.malzemeKodu}
+            disabled={yukleniyor}
+            onChange={(e) => setForm((f) => ({ ...f, malzemeKodu: e.target.value }))}
+            className={hucreInput}
+          >
+            <option value="">{yukleniyor ? 'Yükleniyor...' : 'Seçiniz'}</option>
+            {secenekler.map((m) => (
+              <option key={m.malzemeKodu} value={m.malzemeKodu}>
+                {m.malzemeKodu} - {m.malzemeAdi}
+              </option>
+            ))}
+          </select>
+        </td>
+        <td className="py-2 pr-2 text-gray-500">{seciliAd}</td>
+        <td className="py-2 pr-2">
+          <input
+            type="number"
+            min={1}
+            value={form.miktar}
+            onChange={(e) => setForm((f) => ({ ...f, miktar: e.target.value }))}
+            className={hucreInput}
+          />
+        </td>
+        <td className="py-2 pr-2">
+          <input
+            type="datetime-local"
+            value={form.malzemeVerilisTarihi}
+            onChange={(e) => setForm((f) => ({ ...f, malzemeVerilisTarihi: e.target.value }))}
+            className={hucreInput}
+          />
+        </td>
+        <td className="py-2">
+          <div className="flex justify-end gap-2">
+            <Button size="sm" onClick={kaydet} disabled={kaydediliyor}>
+              {kaydediliyor ? '...' : 'Kaydet'}
             </Button>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <label className="mb-1 block text-sm font-medium text-gray-700">Malzeme</label>
-        <select
-          value={form.malzemeKodu}
-          disabled={yukleniyor}
-          onChange={(e) => setForm((f) => ({ ...f, malzemeKodu: e.target.value }))}
-          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-gray-100"
-        >
-          <option value="">{yukleniyor ? 'Yükleniyor...' : 'Seçiniz'}</option>
-          {secenekler.map((m) => (
-            <option key={m.malzemeKodu} value={m.malzemeKodu}>
-              {m.malzemeKodu} - {m.malzemeAdi}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div>
-        <label className="mb-1 block text-sm font-medium text-gray-700">Miktar (kg)</label>
-        <input
-          type="number"
-          min={1}
-          value={form.miktar}
-          onChange={(e) => setForm((f) => ({ ...f, miktar: e.target.value }))}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
-        />
-      </div>
-
-      <div>
-        <label className="mb-1 block text-sm font-medium text-gray-700">Veriliş Tarihi</label>
-        <input
-          type="datetime-local"
-          value={form.malzemeVerilisTarihi}
-          onChange={(e) => setForm((f) => ({ ...f, malzemeVerilisTarihi: e.target.value }))}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
-        />
-      </div>
-
+            <Button size="sm" variant="outline" onClick={onKapat} disabled={kaydediliyor}>
+              İptal
+            </Button>
+          </div>
+        </td>
+      </tr>
       {hata && (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
-          {hata}
-        </p>
+        <tr>
+          <td colSpan={6} className="pb-2 text-xs text-red-600">
+            {hata}
+          </td>
+        </tr>
       )}
-
-      <div className="flex justify-end gap-2 pt-2">
-        <Button variant="outline" onClick={onKapat} disabled={kaydediliyor}>
-          İptal
-        </Button>
-        <Button onClick={kaydet} disabled={kaydediliyor}>
-          {kaydediliyor ? 'Kaydediliyor...' : 'Kaydet'}
-        </Button>
-      </div>
-    </div>
+    </>
   )
 }
 
