@@ -8,41 +8,85 @@ import org.springframework.stereotype.Service;
 
 import com.isdemir.isdemirdb.dto.LoginRequest;
 import com.isdemir.isdemirdb.dto.LoginResponse;
-import com.isdemir.isdemirdb.entity.Kullanici;
-import com.isdemir.isdemirdb.exception.GecersizKimlikException;
-import com.isdemir.isdemirdb.exception.YetkisizGirisException;
-import com.isdemir.isdemirdb.repository.KullaniciRepository;
+import com.isdemir.isdemirdb.dto.RefreshRequest;
+import com.isdemir.isdemirdb.dto.RefreshResponse;
+import com.isdemir.isdemirdb.entity.RefreshToken;
+import com.isdemir.isdemirdb.entity.User;
+import com.isdemir.isdemirdb.exception.ForbiddenLoginException;
+import com.isdemir.isdemirdb.exception.InvalidCredentialsException;
+import com.isdemir.isdemirdb.repository.UserRepository;
+import com.isdemir.isdemirdb.security.JwtService;
 
 import lombok.RequiredArgsConstructor;
 
-// Login is mantiginin tamami bu katmanda. Controller sadece bu servisi cagirir.
+// The whole login logic lives in this layer. The controller only calls this service.
 @Service
 @RequiredArgsConstructor
 public class AuthService {
 
-    private final KullaniciRepository kullaniciRepository;
+    private final UserRepository userRepository;
+    private final JwtService jwtService;
+    private final RefreshTokenService refreshTokenService;
 
     public LoginResponse login(LoginRequest request) {
 
-        // Kullanici adi / parola eslesmesini ara -> yoksa 401
-        Kullanici kullanici = kullaniciRepository
-                .findByKullaniciAdiAndKullaniciParola(request.getKullaniciAdi(), request.getKullaniciParola())
-                .orElseThrow(() -> new GecersizKimlikException("Kullanıcı adı veya parola hatalı"));
+        // Look for a username / password match -> 401 when there is none
+        User user = userRepository
+                .findByUsernameAndPassword(request.getUsername(), request.getPassword())
+                .orElseThrow(() -> new InvalidCredentialsException("Kullanıcı adı veya parola hatalı"));
 
-        // Eslesme var ama rol_adi NULL/bos -> 403
-        if (kullanici.getRolAdi() == null || kullanici.getRolAdi().trim().isEmpty()) {
-            throw new YetkisizGirisException("Bu kullanıcının giriş yetkisi yok");
+        // There is a match but rol_adi is NULL/empty -> 403
+        if (user.getRoleName() == null || user.getRoleName().trim().isEmpty()) {
+            throw new ForbiddenLoginException("Bu kullanıcının giriş yetkisi yok");
         }
 
-        // rol_adi dolu -> "kv1,kv3" gibi metni diziye parse et
-        List<String> roller = Arrays.stream(kullanici.getRolAdi().split(","))
-                .map(String::trim)
-                .filter(rol -> !rol.isEmpty())
-                .collect(Collectors.toList());
+        // rol_adi is filled -> parse text like "kv1,kv3" into a list
+        List<String> roles = parseRoles(user);
+
+        // Stage 5: successful login -> produce a JWT access token.
+        String accessToken = jwtService.generateAccessToken(user, roles);
+
+        // Stage 7: produce a refresh token and store it in the refresh_tokens table.
+        RefreshToken refreshToken = refreshTokenService.create(user.getId());
 
         return new LoginResponse(
-                kullanici.getKullaniciId(),
-                kullanici.getKullaniciAdi(),
-                roller);
+                user.getId(),
+                user.getUsername(),
+                roles,
+                accessToken,
+                refreshToken.getToken());
+    }
+
+    // Stage 8: produces a new access token when the refresh token is valid.
+    // The refresh token itself is not rotated; only a new access token is returned.
+    public RefreshResponse refresh(RefreshRequest request) {
+
+        // Present in the DB + active + not expired? Otherwise 401.
+        RefreshToken refreshToken = refreshTokenService.validateAndGet(request.getRefreshToken());
+
+        // Load the owner of the token (the roles have to be embedded into the new access token).
+        User user = userRepository.findById(refreshToken.getUserId())
+                .orElseThrow(() -> new InvalidCredentialsException("Kullanıcı bulunamadı."));
+
+        List<String> roles = parseRoles(user);
+        String accessToken = jwtService.generateAccessToken(user, roles);
+
+        return new RefreshResponse(accessToken);
+    }
+
+    // Stage 9: logout -> revoke the refresh token (aktif=false).
+    public void logout(RefreshRequest request) {
+        refreshTokenService.logout(request.getRefreshToken());
+    }
+
+    // Turns the rol_adi text ("kv1,kv3") into a role list. NULL/empty gives an empty list.
+    private List<String> parseRoles(User user) {
+        if (user.getRoleName() == null) {
+            return List.of();
+        }
+        return Arrays.stream(user.getRoleName().split(","))
+                .map(String::trim)
+                .filter(role -> !role.isEmpty())
+                .collect(Collectors.toList());
     }
 }

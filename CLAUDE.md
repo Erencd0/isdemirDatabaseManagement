@@ -1,99 +1,519 @@
-\# İsdemirdb Projesi - Durum Özeti
+# JWT Authentication Roadmap
 
+## Amaç
 
+Projeye JWT tabanlı giriş sistemi eklemek.
 
-\## Proje Yapısı
+Giriş yapan kullanıcılar **Access Token** ve **Refresh Token** alacak.
 
-\- Backend: `backend/isdemirdb` (Spring Boot, pom.xml burada)
+Sadece giriş yapan kullanıcılar döküm ve malzeme işlemlerini gerçekleştirebilecek.
 
-\- Frontend: `frontend/` (React + Vite + Tailwind, kurulum tamam ama login ekranı henüz yazılmadı)
+> **Not:**
+> Bu proje staj projesi olduğu için ilk aşamada şifreler hashlenmeyecek.
+> Gerekirse daha sonra BCrypt eklenebilir.
 
-\- Veritabanı: PostgreSQL
+---
 
+# Aşama 1 - Kullanıcı Yapısını Kontrol Et YAPILDI
 
+`kullanici` tablosunda aşağıdaki alanlar bulunmalı.
 
-\## Ne Amaçlı Proje
+```
+kullanici_id
+kullanici_adi
+kullanici_parola
+rol_adi
+```
 
-Staj örnek projesi — bir kullanıcı giriş (login) sistemi. Güvenlik/hashing/validasyon gerekmiyor, basit tutuluyor.
+Bu aşamada amaç:
 
+- Kullanıcı oluşturabilmek
+- Login için kullanıcıyı veritabanından okuyabilmek
 
+Henüz JWT kullanılmayacak.
 
-\## Veritabanı Şeması
+---
 
-`kullanici` tablosu:
+# Aşama 2 - Refresh Token Tablosunu Oluştur YAPILDI
 
-\- `kullanici\_id` (int, PK, identity)
+Yeni tablo:
 
-\- `kullanici\_adi` (varchar, unique)
+```
+refresh_tokens
+```
 
-\- `kullanici\_parola` (varchar, düz metin — hash yok)
+Kolonlar:
 
-\- `rol\_adi` (varchar, nullable — "kv1" ya da "kv1,kv3" gibi virgülle ayrılmış birden fazla rol içerebilir; bazı kullanıcılarda NULL/boş)
+```
+id
+kullanici_id
+token
+bitis_zamani
+olusturulma_zamani
+aktif
+```
 
+İlişki:
 
+```
+refresh_tokens.kullanici_id
+            ↓
+kullanici.kullanici_id
+```
 
-Tabloda 7 kullanıcı var.
+Foreign Key kullanılacak.
 
+Amaç:
 
+Bir kullanıcının Refresh Token bilgisini veritabanında saklayabilmek.
 
-\## Backend - TAMAMLANDI ✅
+---
 
-\- Kullanici entity + repository yazıldı
+# Aşama 3 - Spring Security'yi Projeye Ekle YAPILDI
 
-\- `POST /api/login` endpoint'i çalışıyor:
+Spring Security dependency'sini ekle.
 
-&#x20; - Kullanıcı adı/parola eşleşmiyorsa → \*\*401\*\* ("Kullanıcı adı veya parola hatalı")
+Henüz authentication yapılmayacak.
 
-&#x20; - Eşleşme var ama `rol\_adi` NULL/boş ise → \*\*403\*\* ("Bu kullanıcının giriş yetkisi yok") — giriş yaptırma
+`SecurityConfig` oluştur.
 
-&#x20; - Eşleşme var ve rol\_adi doluysa → \*\*200\*\*, response: `kullanici\_id`, `kullanici\_adi`, `roller` (rol\_adi parse edilip diziye çevrilmiş halde, örn. "kv1,kv3" → `\["kv1","kv3"]`). Parola response'a dahil edilmiyor.
+Bütün endpointler geçici olarak açık olsun.
 
-\- `application.properties` datasource ayarları doğrulandı
+```java
+permitAll()
+```
 
-\- Postman ile 4 senaryo test edilecek/edildi: rolü olan kullanıcı, çoklu rollü kullanıcı, rolsüz kullanıcı, yanlış parola
+Amaç:
 
-\- CORS ayarı HENÜZ EKLENMEDİ (frontend kurulunca eklenecek)
+Spring Security altyapısını hazırlamak.
 
-\-Dokum entity + repository + GET /api/dokum — sadece listeleme
+---
 
-\-POST /api/dokum — döküm ekleme
+# Aşama 4 - Login Endpointi YAPILDI
 
-\-Malzeme entity + GET /api/malzeme/turler ve GET /api/malzeme?tur=...
+Endpoint
 
-\-MalzemeKullanim entity + POST /api/dokum/{id}/malzeme
+```
+POST /auth/login
+```
 
-\-GET /api/dokum/{id} — dökümü malzemeleriyle birlikte döndürme
+Request
 
-\## Frontend - YAPILDI 
+```json
+{
+    "username": "eren",
+    "password": "123456"
+}
+```
 
-Login ekranı TEK EKRAN olacak (rol seçimi ayrı ekran DEĞİL):
+Bu aşamada yapılacaklar:
 
-\- Kullanıcı adı, parola input'ları + rol combobox'ı aynı formda, alt alta
+- Kullanıcıyı bul
+- Şifreyi kontrol et
+- Başarılıysa girişe izin ver
 
-\- Combobox başta boş/disabled (roller henüz bilinmiyor, giriş denemeden dolmayacak)
+Henüz JWT oluşturulmayacak.
 
-\- "Giriş" butonuna basılınca backend'e istek atılır
+---
 
-\- 401/403 dönerse ilgili hata mesajı gösterilir
+# Aşama 5 - Access Token Üret YAPILDI
 
-\- Başarılı dönerse: combobox, dönen `roller` dizisiyle doldurulur
+Login başarılıysa JWT Access Token oluştur.
 
-&#x20; - \*\*ÖNEMLİ: tek rol olsa bile OTOMATİK SEÇİLMEZ\*\* — kullanıcı yine de comboboxtan seçim yapmak zorunda
+Response
 
-\- Rol seçildikten sonra giriş tamamlanır, seçilen rol state/localStorage'a kaydedilir
+```json
+{
+    "accessToken": "..."
+}
+```
 
-\- Backend adresi: `http://localhost:8080/api/login`
+Henüz Refresh Token kullanılmayacak.
 
-\- CORS: backend tarafında frontend'in çalıştığı porta (muhtemelen Vite 5173) izin verilmesi lazım — bu adım henüz atlanmıştı, frontend'e geçerken eklenmeli
+Amaç:
 
+JWT üretme mantığını öğrenmek.
 
+---
 
-\## Ortam / Araçlar
+# Aşama 6 - JWT Filter Yaz YAPILDI
 
-\- Backend: VS Code'da geliştiriliyor, `mvn spring-boot:run` ile çalıştırılıyor
+Her istek aşağıdaki Authorization Header ile gelecek.
 
-\- Java 17 (Temurin JDK), Maven PATH'e eklendi
+```
+Authorization
 
-\- Frontend: React + Tailwind kurulumu tamam, henüz login componenti yazılmadı
+Bearer <access_token>
+```
 
+> Bu token **Postman içerisinde Authorization → Bearer Token alanına manuel olarak yapıştırılacaktır.**
+> Otomatik token ekleme veya otomatik yenileme yapılmayacaktır.
 
+JWT Filter işlemleri:
+
+↓
+
+Authorization Header'ı oku
+
+↓
+
+Token doğrula
+
+↓
+
+Kullanıcıyı belirle
+
+↓
+
+SecurityContext içerisine yerleştir
+
+Bu aşamadan sonra login olmadan korunan endpointlere erişilemeyecek.
+
+---
+
+# Aşama 7 - Refresh Token Sistemi YAPILDI
+
+Login başarılı olunca iki token oluştur.
+
+```
+Access Token
+
+Refresh Token
+```
+
+Refresh Token
+
+```
+refresh_tokens
+```
+
+tablosuna kaydedilecek.
+
+Response
+
+```json
+{
+    "accessToken": "...",
+    "refreshToken": "..."
+}
+```
+
+---
+
+# Aşama 8 - Refresh Endpointi YAPILDI
+
+Endpoint
+
+```
+POST /auth/refresh
+```
+
+Request
+
+```json
+{
+    "refreshToken": "..."
+}
+```
+
+İşleyiş
+
+- Token DB'de var mı?
+- aktif = true mı?
+- Süresi dolmuş mu?
+
+Hepsi doğruysa
+
+↓
+
+Yeni Access Token üret.
+
+↓
+
+Response olarak geri döndür.
+
+> Yeni Access Token yine Postman üzerinde eski Bearer Token silinerek manuel olarak eklenecektir.
+
+---
+ 
+# Aşama 9 - Logout YAPILDI
+
+Endpoint
+
+```
+POST /auth/logout
+```
+
+Logout olduğunda
+
+```
+aktif = false
+```
+
+yapılacak.
+
+Artık bu Refresh Token kullanılarak yeni Access Token üretilemeyecek.
+
+---
+
+# Aşama 10 - Endpointleri Koru YAPILDI
+
+Örneğin
+
+```
+POST /dokum
+```
+
+Artık sadece giriş yapan kullanıcı kullanabilecek.
+
+Login olmayan kullanıcı
+
+```
+401 Unauthorized
+```
+
+alacak.
+
+---
+
+# Test Senaryosu (Postman)
+
+## Kullanıcı Oluştur
+
+↓
+
+## Login
+
+↓
+
+Response
+
+```
+Access Token
+
+Refresh Token
+```
+
+↓
+
+Access Token'ı kopyala.
+
+↓
+
+Postman
+
+Authorization
+
+↓
+
+Bearer Token
+
+↓
+
+Access Token'ı manuel olarak yapıştır.
+
+↓
+
+Korunan endpointi çağır.
+
+```
+POST /dokum
+```
+
+↓
+
+```
+200 OK
+```
+
+↓
+
+Access Token'ın süresi dolsun.
+
+↓
+
+```
+POST /auth/refresh
+```
+
+↓
+
+Yeni Access Token dönsün.
+
+↓
+
+Postman'de eski Bearer Token'ı sil.
+
+↓
+
+Yeni Access Token'ı manuel olarak yapıştır.
+
+↓
+
+Tekrar
+
+```
+POST /dokum
+```
+
+↓
+
+```
+200 OK
+```
+
+↓
+
+Logout
+
+↓
+
+```
+POST /auth/logout
+```
+
+↓
+
+Aynı Refresh Token ile tekrar
+
+```
+POST /auth/refresh
+```
+
+↓
+
+```
+401 Unauthorized
+```
+
+veya
+
+```
+Refresh Token aktif değil.
+```
+
+---
+
+# Paket Yapısı
+
+```
+security
+│
+├── SecurityConfig
+├── JwtService
+├── JwtFilter
+├── JwtAuthenticationEntryPoint
+└── JwtProperties
+
+auth
+│
+├── AuthController
+├── AuthService
+├── LoginRequest
+├── LoginResponse
+└── RefreshRequest
+
+token
+│
+├── RefreshToken
+├── RefreshTokenRepository
+└── RefreshTokenService
+
+user
+│
+├── User
+├── UserRepository
+└── UserService
+```
+
+---
+
+# Claude Code ile Çalışma Sırası
+
+Her adımı ayrı prompt olarak yaptır.
+
+## Prompt 1
+
+Spring Security dependency ekle ve SecurityConfig oluştur.
+
+Şimdilik bütün endpointler `permitAll()` olsun.
+
+---
+
+## Prompt 2
+
+JWT Service oluştur.
+
+Token üretebilsin ve doğrulayabilsin.
+
+---
+
+## Prompt 3
+
+Login endpointini oluştur.
+
+Henüz sadece Access Token dönsün.
+
+---
+
+## Prompt 4
+
+JWT Filter yaz.
+
+Authorization Bearer Token ile gelen isteği doğrulasın.
+
+---
+
+## Prompt 5
+
+RefreshToken Entity, Repository ve Service katmanını oluştur.
+
+---
+
+## Prompt 6
+
+Login sırasında Refresh Token üret ve veritabanına kaydet.
+
+---
+
+## Prompt 7
+
+`/auth/refresh` endpointini yaz.
+
+---
+
+## Prompt 8
+
+`/auth/logout` endpointini yaz.
+
+---
+
+## Prompt 9
+
+Döküm ve malzeme endpointlerini authentication zorunlu olacak şekilde güncelle.
+
+---
+
+# Hedef
+
+Proje sonunda aşağıdaki akış çalışıyor olmalı.
+
+```
+Login
+      ↓
+Access Token + Refresh Token
+      ↓
+(Postman'de Access Token manuel olarak Bearer Token alanına eklenir)
+      ↓
+Korunan Endpoint
+      ↓
+Access Token Süresi Doldu
+      ↓
+Refresh Endpoint
+      ↓
+Yeni Access Token
+      ↓
+(Postman'de eski Bearer Token silinir ve yenisi manuel eklenir)
+      ↓
+İşleme Devam
+```

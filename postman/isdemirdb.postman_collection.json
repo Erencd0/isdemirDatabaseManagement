@@ -1,0 +1,473 @@
+{
+  "info": {
+    "name": "İsdemirdb - Servis Testleri",
+    "description": "İsdemirdb backend servisinin (Spring Boot, http://localhost:8080) Postman test koleksiyonu.\n\nSenaryo: Döküm ve malzeme verileri normalde seviye otomasyon yazılımından otomatik gelir. Bu koleksiyon o otomasyonu taklit eder; gönderilen zaman verileri tutarsızsa backend HTTP 400 ile ÖZEL bir hata mesajı döner. Tüm zaman/sıra doğrulaması backend service katmanındadır (frontend'de değil).\n\nKULLANIM:\n1. Backend'i çalıştır: mvn spring-boot:run\n2. Aşağıdaki 'Variables' sekmesinden kullaniciAdi / kullaniciParola değerlerini gerçek bir kullanıcıyla doldur.\n3. Klasörleri sırayla çalıştır. 'POST Döküm - Geçerli' isteği, kaydedilen dokumId'yi otomatik olarak {{dokumId}} değişkenine yazar; malzeme istekleri bunu kullanır.\n4. Her istekte 'Tests' sekmesi HTTP kodunu otomatik doğrular; sonuç Postman konsolunda (View > Show Postman Console) görünür.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080/api", "type": "string" },
+    { "key": "kullaniciAdi", "value": "DEGISTIR_kullanici_adi", "type": "string" },
+    { "key": "kullaniciParola", "value": "DEGISTIR_parola", "type": "string" },
+    { "key": "kullaniciId", "value": "1", "type": "string" },
+    { "key": "konverterNo", "value": "1", "type": "string" },
+    { "key": "dokumId", "value": "", "type": "string" },
+    { "key": "kullanimId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1 - Kimlik (Login)",
+      "item": [
+        {
+          "name": "Login - Başarılı (rolü olan kullanıcı) → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 döndü', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('roller dizisi dolu geldi', () => pm.expect(j.roller).to.be.an('array').that.is.not.empty);",
+                  "pm.test('parola response'a dahil edilmemiş', () => pm.expect(j).to.not.have.property('kullanici_parola'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kullanici_adi\": \"{{kullaniciAdi}}\",\n  \"kullanici_parola\": \"{{kullaniciParola}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/login", "host": ["{{baseUrl}}"], "path": ["login"] },
+            "description": "Geçerli kullanıcı adı+parola ve rolü dolu bir kullanıcı → 200. Response: kullanici_id, kullanici_adi, roller (dizi). Variables'tan gerçek kullanıcıyı gir."
+          }
+        },
+        {
+          "name": "Login - Yanlış parola → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 döndü', () => pm.response.to.have.status(401));",
+                  "pm.test('özel mesaj döndü', () => pm.expect(pm.response.text()).to.include('hatalı'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kullanici_adi\": \"{{kullaniciAdi}}\",\n  \"kullanici_parola\": \"kesinlikle_yanlis_parola\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/login", "host": ["{{baseUrl}}"], "path": ["login"] },
+            "description": "Kullanıcı adı/parola eşleşmiyor → 401 'Kullanıcı adı veya parola hatalı'."
+          }
+        },
+        {
+          "name": "Login - Rolsüz kullanıcı → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 döndü', () => pm.response.to.have.status(403));",
+                  "pm.test('yetki mesajı döndü', () => pm.expect(pm.response.text()).to.include('yetki'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kullanici_adi\": \"DEGISTIR_rolsuz_kullanici\",\n  \"kullanici_parola\": \"DEGISTIR_parola\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/login", "host": ["{{baseUrl}}"], "path": ["login"] },
+            "description": "Kullanıcı adı/parola doğru ama rol_adi NULL/boş → 403 'Bu kullanıcının giriş yetkisi yok'. Rolü olmayan bir kullanıcı gir."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 - Malzeme",
+      "item": [
+        {
+          "name": "GET Malzeme Türleri → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 döndü', () => pm.response.to.have.status(200));",
+                  "pm.test('dizi döndü', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/malzeme/turler", "host": ["{{baseUrl}}"], "path": ["malzeme", "turler"] },
+            "description": "Benzersiz malzeme türlerini listeler (combobox için)."
+          }
+        },
+        {
+          "name": "GET Malzeme (türe göre) → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 döndü', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/malzeme?tur=KONVKATKI",
+              "host": ["{{baseUrl}}"],
+              "path": ["malzeme"],
+              "query": [{ "key": "tur", "value": "KONVKATKI" }]
+            },
+            "description": "Seçilen türe ait aktif malzemeleri listeler. 'tur' değerini 'GET Malzeme Türleri' çıktısındaki gerçek bir türle değiştir."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 - Döküm (Geçerli Senaryolar)",
+      "item": [
+        {
+          "name": "GET Sıradaki Döküm No → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 döndü', () => pm.response.to.have.status(200));",
+                  "pm.test('7 haneli numara döndü', () => pm.expect(String(pm.response.json())).to.match(/^6\\d{6}$/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/dokum/sonraki-no?konverterNo={{konverterNo}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["dokum", "sonraki-no"],
+              "query": [{ "key": "konverterNo", "value": "{{konverterNo}}" }]
+            },
+            "description": "Kaydetmeden önce bu konverterin alacağı bir sonraki dokum_no'yu döner (7 haneli, 6 ile başlar, 2. hane konverter no)."
+          }
+        },
+        {
+          "name": "POST Döküm - Geçerli (zamanlar kronolojik) → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 döndü', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('basarili = true döndü', () => pm.expect(j.basarili).to.eql(true));",
+                  "pm.test('dokumId atandı', () => pm.expect(j.dokumId).to.be.a('number'));",
+                  "// Sonraki (malzeme) istekleri için kaydedilen dokum id'yi sakla",
+                  "pm.collectionVariables.set('dokumId', j.dokumId);",
+                  "console.log('Sonuç:', j.mesaj, '| dokumId =', j.dokumId, '| dokumNo =', j.dokumNo);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"konverterNo\": {{konverterNo}},\n  \"hurdaSarjBaslamaZamani\": \"2026-08-04T08:00:00\",\n  \"hurdaSarjBitisZamani\": \"2026-08-04T08:10:00\",\n  \"anaUflemeyeBaslamaZamani\": \"2026-08-04T08:15:00\",\n  \"anaUflemeBitisZamani\": \"2026-08-04T08:35:00\",\n  \"dokumZamani\": \"2026-08-04T08:45:00\",\n  \"shdSicaklik\": 1620,\n  \"dokumSicaklik\": 1650,\n  \"lansSkalDurum\": \"NORMAL\",\n  \"kullaniciId\": {{kullaniciId}}\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/dokum", "host": ["{{baseUrl}}"], "path": ["dokum"] },
+            "description": "Otomasyonun gönderdiği geçerli döküm. Zamanlar kronolojik sırada: hurda şarj başla → bitiş → ana üflemeye başla → ana üfleme bitiş → döküm zamanı.\n\nNOT: Aynı konverterde daha geç zamanlı bir döküm zaten varsa backend 'önceki dökümün zamanlarından önce olamaz' (400) döndürebilir. O durumda buradaki tarihleri o dökümden sonraya çek."
+          }
+        },
+        {
+          "name": "GET Tüm Dökümler → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 döndü', () => pm.response.to.have.status(200));",
+                  "pm.test('dizi döndü', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/dokum", "host": ["{{baseUrl}}"], "path": ["dokum"] },
+            "description": "Tüm dökümleri listeler."
+          }
+        },
+        {
+          "name": "GET Döküm Detay (malzemeleriyle) → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 döndü', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('dokum + malzemeler döndü', () => { pm.expect(j).to.have.property('dokum'); pm.expect(j).to.have.property('malzemeler'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/dokum/{{dokumId}}", "host": ["{{baseUrl}}"], "path": ["dokum", "{{dokumId}}"] },
+            "description": "Dökümü, ona eklenmiş tüm malzemeleriyle birlikte döner. {{dokumId}} 'POST Döküm - Geçerli' isteğinden otomatik gelir."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 - Döküm (Zaman Hatası Senaryoları → 400 özel mesaj)",
+      "item": [
+        {
+          "name": "POST Döküm - Ters zaman (döküm zamanı ana üflemeden önce) → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 döndü', () => pm.response.to.have.status(400));",
+                  "const j = pm.response.json();",
+                  "pm.test('basarili = false döndü', () => pm.expect(j.basarili).to.eql(false));",
+                  "pm.test('özel zaman mesajı döndü', () => pm.expect(j.mesaj).to.include('önce olamaz'));",
+                  "console.log('Backend mesajı:', j.mesaj);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"konverterNo\": {{konverterNo}},\n  \"hurdaSarjBaslamaZamani\": \"2026-08-04T09:00:00\",\n  \"hurdaSarjBitisZamani\": \"2026-08-04T09:10:00\",\n  \"anaUflemeyeBaslamaZamani\": \"2026-08-04T09:15:00\",\n  \"anaUflemeBitisZamani\": \"2026-08-04T09:35:00\",\n  \"dokumZamani\": \"2026-08-04T09:05:00\",\n  \"shdSicaklik\": 1620,\n  \"dokumSicaklik\": 1650,\n  \"lansSkalDurum\": \"NORMAL\",\n  \"kullaniciId\": {{kullaniciId}}\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/dokum", "host": ["{{baseUrl}}"], "path": ["dokum"] },
+            "description": "dokumZamani, anaUflemeBitisZamani'ndan ÖNCE. Kronolojik sıra bozuk → 400 'Döküm Zamanı zamanı, Ana Üfleme Bitiş zamanından önce olamaz'."
+          }
+        },
+        {
+          "name": "POST Döküm - Ters zaman (hurda şarj bitiş, başlangıçtan önce) → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 döndü', () => pm.response.to.have.status(400));",
+                  "const j = pm.response.json();",
+                  "pm.test('basarili = false döndü', () => pm.expect(j.basarili).to.eql(false));",
+                  "pm.test('özel zaman mesajı döndü', () => pm.expect(j.mesaj).to.include('önce olamaz'));",
+                  "console.log('Backend mesajı:', j.mesaj);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"konverterNo\": {{konverterNo}},\n  \"hurdaSarjBaslamaZamani\": \"2026-08-04T10:00:00\",\n  \"hurdaSarjBitisZamani\": \"2026-08-04T09:50:00\",\n  \"anaUflemeyeBaslamaZamani\": \"2026-08-04T10:15:00\",\n  \"anaUflemeBitisZamani\": \"2026-08-04T10:35:00\",\n  \"dokumZamani\": \"2026-08-04T10:45:00\",\n  \"shdSicaklik\": 1620,\n  \"dokumSicaklik\": 1650,\n  \"lansSkalDurum\": \"NORMAL\",\n  \"kullaniciId\": {{kullaniciId}}\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/dokum", "host": ["{{baseUrl}}"], "path": ["dokum"] },
+            "description": "hurdaSarjBitisZamani, hurdaSarjBaslamaZamani'ndan ÖNCE → 400 'Hurda Şarj Bitiş zamanı, Hurda Şarj Başlama zamanından önce olamaz'."
+          }
+        },
+        {
+          "name": "POST Döküm - Çakışan zaman (önceki dökümden önce) → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 döndü', () => pm.response.to.have.status(400));",
+                  "const j = pm.response.json();",
+                  "pm.test('basarili = false döndü', () => pm.expect(j.basarili).to.eql(false));",
+                  "pm.test('sıra/çakışma mesajı döndü', () => pm.expect(j.mesaj).to.include('önceki dökümün'));",
+                  "console.log('Backend mesajı:', j.mesaj);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"konverterNo\": {{konverterNo}},\n  \"hurdaSarjBaslamaZamani\": \"2000-01-01T00:00:00\",\n  \"hurdaSarjBitisZamani\": \"2000-01-01T00:10:00\",\n  \"anaUflemeyeBaslamaZamani\": \"2000-01-01T00:15:00\",\n  \"anaUflemeBitisZamani\": \"2000-01-01T00:35:00\",\n  \"dokumZamani\": \"2000-01-01T00:45:00\",\n  \"shdSicaklik\": 1620,\n  \"dokumSicaklik\": 1650,\n  \"lansSkalDurum\": \"NORMAL\",\n  \"kullaniciId\": {{kullaniciId}}\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/dokum", "host": ["{{baseUrl}}"], "path": ["dokum"] },
+            "description": "Zamanlar kendi içinde tutarlı ama çok eski (2000 yılı). Aynı konverterde daha yeni bir döküm varsa, yeni dökümün en erken zamanı öncekinin en geç zamanından önce olamaz → 400 'Bu dökümün zamanları, aynı konverterdeki önceki dökümün (No: ...) zamanlarından önce olamaz'.\n\nNOT: Bu senaryonun 400 dönmesi için o konverterde en az bir döküm daha bulunmalı (önce 'POST Döküm - Geçerli'yi çalıştır)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 - Malzeme Kullanım (döküme bağlı)",
+      "item": [
+        {
+          "name": "POST Malzeme Ekle - Geçerli → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 döndü', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('kullanimId atandı', () => pm.expect(j.kullanimId).to.be.a('number'));",
+                  "pm.collectionVariables.set('kullanimId', j.kullanimId);",
+                  "console.log('Kaydedilen kullanimId =', j.kullanimId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"malzemeKodu\": 1001,\n  \"miktar\": 500,\n  \"malzemeVerilisTarihi\": \"2026-08-04T09:00:00\",\n  \"kullaniciId\": {{kullaniciId}}\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/dokum/{{dokumId}}/malzeme", "host": ["{{baseUrl}}"], "path": ["dokum", "{{dokumId}}", "malzeme"] },
+            "description": "Döküme malzeme ekler. malzemeVerilisTarihi, dökümün dokumZamani'ndan (08:45) SONRA olduğu için geçerli. 'malzemeKodu' değerini gerçek bir malzeme koduyla değiştir."
+          }
+        },
+        {
+          "name": "POST Malzeme Ekle - Veriliş döküm zamanından önce → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 döndü', () => pm.response.to.have.status(400));",
+                  "pm.test('özel mesaj döndü', () => pm.expect(pm.response.text()).to.include('döküm zamanından önce olamaz'));",
+                  "console.log('Backend mesajı:', pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"malzemeKodu\": 1001,\n  \"miktar\": 500,\n  \"malzemeVerilisTarihi\": \"2026-08-04T07:00:00\",\n  \"kullaniciId\": {{kullaniciId}}\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/dokum/{{dokumId}}/malzeme", "host": ["{{baseUrl}}"], "path": ["dokum", "{{dokumId}}", "malzeme"] },
+            "description": "malzemeVerilisTarihi (07:00), dökümün dokumZamani'ndan (08:45) ÖNCE → 400 'Malzeme veriliş tarihi, döküm zamanından önce olamaz'."
+          }
+        },
+        {
+          "name": "PUT Malzeme Güncelle → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 döndü', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"malzemeKodu\": 1001,\n  \"miktar\": 750,\n  \"malzemeVerilisTarihi\": \"2026-08-04T09:30:00\",\n  \"kullaniciId\": {{kullaniciId}}\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/dokum/{{dokumId}}/malzeme/{{kullanimId}}", "host": ["{{baseUrl}}"], "path": ["dokum", "{{dokumId}}", "malzeme", "{{kullanimId}}"] },
+            "description": "Var olan malzeme kullanımını günceller (miktar 500 → 750). {{kullanimId}} 'POST Malzeme Ekle - Geçerli' isteğinden otomatik gelir."
+          }
+        },
+        {
+          "name": "DELETE Malzeme Sil → 204",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 döndü', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/dokum/{{dokumId}}/malzeme/{{kullanimId}}", "host": ["{{baseUrl}}"], "path": ["dokum", "{{dokumId}}", "malzeme", "{{kullanimId}}"] },
+            "description": "Malzeme kullanımını siler → 204 No Content."
+          }
+        }
+      ]
+    },
+    {
+      "name": "6 - Kayıt Bulunamadı (404)",
+      "item": [
+        {
+          "name": "GET Döküm Detay - Olmayan id → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 döndü', () => pm.response.to.have.status(404));",
+                  "pm.test('bulunamadı mesajı döndü', () => pm.expect(pm.response.text()).to.include('bulunamadı'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/dokum/999999", "host": ["{{baseUrl}}"], "path": ["dokum", "999999"] },
+            "description": "Olmayan bir döküm id → 404 'Döküm bulunamadı'."
+          }
+        }
+      ]
+    }
+  ]
+}

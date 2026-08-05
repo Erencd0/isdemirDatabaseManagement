@@ -1,10 +1,10 @@
 /*
-  Tekrar kullanilabilir buton componenti.
-  Renkler src/index.css icindeki @theme "brand" paletinden gelir; oradaki
-  renkleri degistirince butonlar da otomatik degisir.
+  Reusable button component.
+  The colors come from the "brand" @theme palette in src/index.css; changing the
+  colors there changes the buttons automatically.
 
-  Kullanim:
-    <Button>Giris</Button>                     // varsayilan: primary + md
+  Usage:
+    <Button>Giris</Button>                     // default: primary + md
     <Button variant="outline">Iptal</Button>
     <Button size="lg" fullWidth>Kaydet</Button>
 */
@@ -14,14 +14,14 @@ const base =
   'focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 ' +
   'disabled:opacity-60 disabled:cursor-not-allowed'
 
-// Renk varyantlari - hepsi brand paletini kullanir
+// Color variants - all of them use the brand palette
 const variants = {
   primary: 'bg-brand-700 hover:bg-brand-800 text-white',
   secondary: 'bg-brand-50 hover:bg-brand-100 text-brand-700',
   outline: 'border border-brand-700 text-brand-700 hover:bg-brand-50',
 }
 
-// Boyutlar - genelde md kullanilir, ileride tek yerden degistirilebilir
+// Sizes - md is the usual one, changeable from this single place later
 const sizes = {
   sm: 'text-sm px-3 py-1.5',
   md: 'px-4 py-2.5',

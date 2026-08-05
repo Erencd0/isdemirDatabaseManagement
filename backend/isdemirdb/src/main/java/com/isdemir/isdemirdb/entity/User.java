@@ -10,24 +10,26 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+// Maps the kullanici table. Never serialized to JSON directly (see LoginResponse).
 @Entity
 @Table(name = "kullanici")
 @Getter
 @Setter
 @NoArgsConstructor
-public class Kullanici {
+public class User {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "kullanici_id")
-    private Integer kullaniciId;
+    private Integer id;
 
     @Column(name = "kullanici_adi", unique = true)
-    private String kullaniciAdi;
+    private String username;
 
     @Column(name = "kullanici_parola")
-    private String kullaniciParola;
+    private String password;
 
+    // Comma separated role list, e.g. "kv1,kv3" (see AuthService.parseRoles)
     @Column(name = "rol_adi")
-    private String rolAdi;
+    private String roleName;
 }

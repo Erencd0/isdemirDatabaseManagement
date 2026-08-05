@@ -1,14 +1,15 @@
 /*
-  Basit, tekrar kullanilabilir popup (modal) componenti.
-  Arka plana yari saydam siyah bir katman koyar, ortada beyaz kart acar.
+  Simple, reusable popup (modal) component.
+  It puts a semi transparent black layer over the background and opens a white card
+  in the middle.
 
-  - open: true ise gorunur
-  - onClose: arka plana ya da X'e tiklaninca cagrilir
-  - title: ust bardaki baslik
-  - maxWidth: kartin genisligi (orn. "max-w-lg", "max-w-3xl")
+  - open: visible when true
+  - onClose: called when the background or the X is clicked
+  - title: the heading in the top bar
+  - maxWidth: the width of the card (e.g. "max-w-lg", "max-w-3xl")
 
-  Ic ice acilabilir (bir modalin icinden ikinci modal) cunku her biri
-  fixed + z-50 ile en uste biner ve stopPropagation ile birbirini kapatmaz.
+  Modals can be nested (a second modal from inside a modal) because each one stacks
+  on top with fixed + z-50 and stopPropagation keeps them from closing each other.
 */
 function Modal({ open, onClose, title, children, maxWidth = 'max-w-lg' }) {
   if (!open) return null

@@ -2,13 +2,17 @@ import { useEffect, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import Button from '../components/Button.jsx'
 import Modal from '../components/Modal.jsx'
+import { apiFetch, hasSession, logoutRequest, SessionError } from '../api/client.js'
 
-const API = 'http://localhost:8080/api'
+// Every request here goes through apiFetch: it adds the access token as
+// "Authorization: Bearer ..." and on a 401 it throws SessionError and redirects to the login
+// page. That is why the catch blocks check for SessionError first; in that case there is no
+// point in showing a "server error" on screen, the page is already changing.
 
-// Dokum ekleme formundaki alanlar. malzeme_kodu haric (kural geregi),
-// dokum_id / dokum_no / kayit_zamani / kullanici_id backend'de otomatik atanir.
-// Alan adlari backend JSON'i ile ayni (camelCase) olmali.
-const DOKUM_ALANLARI = [
+// The fields of the heat form. malzeme_kodu is excluded (by rule), and
+// dokum_id / dokum_no / kayit_zamani / kullanici_id are assigned by the backend.
+// The field names must match the backend JSON (camelCase).
+const HEAT_FIELDS = [
   { name: 'hurdaSarjBaslamaZamani', label: 'Hurda Şarj Başlama', type: 'datetime-local' },
   { name: 'hurdaSarjBitisZamani', label: 'Hurda Şarj Bitiş', type: 'datetime-local' },
   { name: 'anaUflemeyeBaslamaZamani', label: 'Ana Üflemeye Başlama', type: 'datetime-local' },
@@ -21,7 +25,8 @@ const DOKUM_ALANLARI = [
     label: 'Lans Skal Durum',
     type: 'select',
     required: true,
-    // Gorunen metin AZ SKALLI, DB'ye giden deger AZ_SKALLI (DB sadece bu 3'unu kabul eder)
+    // The visible text is AZ SKALLI, the value sent to the DB is AZ_SKALLI
+    // (the DB only accepts these 3)
     options: [
       { value: 'AZ_SKALLI', label: 'AZ SKALLI' },
       { value: 'ORTA_SKALLI', label: 'ORTA SKALLI' },
@@ -30,27 +35,28 @@ const DOKUM_ALANLARI = [
   },
 ]
 
-const BOS_FORM = DOKUM_ALANLARI.reduce((acc, a) => ({ ...acc, [a.name]: '' }), {})
+const EMPTY_FORM = HEAT_FIELDS.reduce((acc, f) => ({ ...acc, [f.name]: '' }), {})
 
-// Malzeme ekleme (4-5-6). 3 katki butonu, DB'deki malzeme_turu degerlerine eslenir.
-// Butona basilinca o ture ait malzemeler /api/malzeme?tur=... ile combobox'a doldurulur.
-const KATKILAR = [
-  { tur: 'KONVKATKI', label: 'Konverter Katkı' },
-  { tur: 'POTAKATKI', label: 'Pota Katkı' },
-  { tur: 'HURDAKATKI', label: 'Hurda Katkı' },
+// Adding materials (steps 4-5-6). 3 additive buttons, mapped to the malzeme_turu values in
+// the DB. Pressing a button loads the materials of that type into the combobox through
+// /api/malzeme?tur=...
+const ADDITIVES = [
+  { type: 'KONVKATKI', label: 'Konverter Katkı' },
+  { type: 'POTAKATKI', label: 'Pota Katkı' },
+  { type: 'HURDAKATKI', label: 'Hurda Katkı' },
 ]
 
-const BOS_MALZEME_FORM = { malzemeKodu: '', miktar: '', malzemeVerilisTarihi: '' }
+const EMPTY_MATERIAL_FORM = { malzemeKodu: '', miktar: '', malzemeVerilisTarihi: '' }
 
-// Katki turu kodu -> gorunen etiket (detay ve listede gostermek icin)
-const KATKI_ETIKET = KATKILAR.reduce((acc, k) => ({ ...acc, [k.tur]: k.label }), {})
+// Additive type code -> visible label (used in the detail and in the list)
+const ADDITIVE_LABELS = ADDITIVES.reduce((acc, a) => ({ ...acc, [a.type]: a.label }), {})
 
-// Alan adi -> gorunen etiket (zaman dogrulama mesajlarinda kullanilir)
-const ALAN_ETIKET = DOKUM_ALANLARI.reduce((acc, a) => ({ ...acc, [a.name]: a.label }), {})
+// Field name -> visible label (used in the time validation messages)
+const FIELD_LABELS = HEAT_FIELDS.reduce((acc, f) => ({ ...acc, [f.name]: f.label }), {})
 
-// Islem zamanlarinin kronolojik sirasi. Her zaman bir oncekinden ONCE olamaz:
-// hurda sarj basla -> bitis -> ana uflemeye basla -> ana ufleme bitis -> dokum
-const ZAMAN_SIRASI = [
+// The chronological order of the process times. None of them may come BEFORE the previous
+// one: scrap charge start -> end -> main blow start -> main blow end -> tap
+const TIME_ORDER = [
   'hurdaSarjBaslamaZamani',
   'hurdaSarjBitisZamani',
   'anaUflemeyeBaslamaZamani',
@@ -58,11 +64,11 @@ const ZAMAN_SIRASI = [
   'dokumZamani',
 ]
 
-// datetime-local degerini okunabilir hale getirir ("2026-08-02T14:30" -> "02.08.2026 14:30")
-function tarihGoster(deger) {
-  if (!deger) return '-'
-  const d = new Date(deger)
-  if (isNaN(d)) return deger
+// Makes a datetime-local value readable ("2026-08-02T14:30" -> "02.08.2026 14:30")
+function formatDate(value) {
+  if (!value) return '-'
+  const d = new Date(value)
+  if (isNaN(d)) return value
   return d.toLocaleString('tr-TR', {
     day: '2-digit',
     month: '2-digit',
@@ -75,337 +81,406 @@ function tarihGoster(deger) {
 function Dashboard() {
   const navigate = useNavigate()
 
-  const kullaniciAdi = localStorage.getItem('kullanici_adi')
-  const seciliRol = localStorage.getItem('secili_rol')
-  const kullaniciId = localStorage.getItem('kullanici_id')
+  const username = localStorage.getItem('kullanici_adi')
+  const selectedRole = localStorage.getItem('secili_rol')
+  const userId = localStorage.getItem('kullanici_id')
 
-  // Secilen rol (kv1/kv2/kv3) -> konverter no (1/2/3). dokum_no'nun 2. hanesi budur.
-  const konverterNo = Number((seciliRol || '').replace(/[^0-9]/g, ''))
+  // Selected role (kv1/kv2/kv3) -> converter number (1/2/3). This is the 2nd digit of dokum_no.
+  const converterNo = Number((selectedRole || '').replace(/[^0-9]/g, ''))
 
-  // Dokum ekleme formu
-  const [form, setForm] = useState(BOS_FORM)
-  const [kaydediliyor, setKaydediliyor] = useState(false)
-  const [formMesaj, setFormMesaj] = useState(null) // sadece kayit sonucu (basari/sunucu hatasi)
-  const [hatalar, setHatalar] = useState({}) // alan bazli dogrulama hatalari: { alanAdi: mesaj }
+  // The heat form
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [saving, setSaving] = useState(false)
+  const [formMessage, setFormMessage] = useState(null) // only the save result (ok/server error)
+  const [errors, setErrors] = useState({}) // per field validation errors: { fieldName: message }
 
-  // Kaydedilmis dokum (varsa). Kaydet sonrasi burada tutulur; malzemeler bu dokume
-  // eklenir. Doluysa form kilitlenir (tekrar Kaydet duplike olusturmasin), "Yeni Dokum"
-  // ile temizlenip sonraki dokume gecilir.
-  const [kayitliDokum, setKayitliDokum] = useState(null)
-  const kayitli = kayitliDokum !== null
+  // The saved heat (when there is one). It is kept here after Kaydet and the materials are
+  // added to it. While it is set the form is locked (a second Kaydet must not create a
+  // duplicate); "Yeni Döküm" clears it and moves on to the next heat.
+  const [savedHeat, setSavedHeat] = useState(null)
+  const saved = savedHeat !== null
 
-  // Kaydedilince bu kullanicinin alacagi dokum_no (backend hesaplar, degistirilemez gosterilir)
-  const [sonrakiNo, setSonrakiNo] = useState(null)
+  // The dokum_no this user will get once saved (calculated by the backend, shown read only)
+  const [nextNo, setNextNo] = useState(null)
 
-  // Dokumleri listele popup'i
-  const [listeAcik, setListeAcik] = useState(false)
-  const [dokumler, setDokumler] = useState([])
-  const [listeYukleniyor, setListeYukleniyor] = useState(false)
-  const [listeHata, setListeHata] = useState('')
+  // The "list the heats" popup
+  const [listOpen, setListOpen] = useState(false)
+  const [heats, setHeats] = useState([])
+  const [listLoading, setListLoading] = useState(false)
+  const [listError, setListError] = useState('')
 
-  // Detay popup'i
-  const [detay, setDetay] = useState(null) // { dokum, malzemeler }
-  const [detayYukleniyor, setDetayYukleniyor] = useState(false)
+  // --- Adding materials (steps 4-5-6) ---
+  // The selected additive (KONVKATKI/POTAKATKI/HURDAKATKI). The material form does not open
+  // before one of the buttons is pressed.
+  const [selectedAdditive, setSelectedAdditive] = useState(null)
+  const [materialOptions, setMaterialOptions] = useState([]) // combobox of the selected additive
+  const [materialsLoading, setMaterialsLoading] = useState(false)
+  const [materialForm, setMaterialForm] = useState(EMPTY_MATERIAL_FORM)
+  const [materialErrors, setMaterialErrors] = useState({})
+  const [materialMessage, setMaterialMessage] = useState(null)
+  const [materialSaving, setMaterialSaving] = useState(false)
+  // The materials added to this heat (shown in the list after saving). The rows also keep
+  // _type and malzemeAdi (on the client side) for the list and the edit row.
+  const [addedMaterials, setAddedMaterials] = useState([])
+  // The row being edited (when set, the inline edit row is rendered)
+  const [editingRow, setEditingRow] = useState(null)
 
-  // --- Malzeme ekleme (4-5-6) ---
-  // Secili katki (KONVKATKI/POTAKATKI/HURDAKATKI). Bir butona basilmadan malzeme formu acilmaz.
-  const [seciliKatki, setSeciliKatki] = useState(null)
-  const [malzemeSecenekleri, setMalzemeSecenekleri] = useState([]) // secili katkinin comboboxu
-  const [malzemeYukleniyor, setMalzemeYukleniyor] = useState(false)
-  const [malzemeForm, setMalzemeForm] = useState(BOS_MALZEME_FORM)
-  const [malzemeHatalar, setMalzemeHatalar] = useState({})
-  const [malzemeMesaj, setMalzemeMesaj] = useState(null)
-  const [malzemeKaydediliyor, setMalzemeKaydediliyor] = useState(false)
-  // Bu dokume eklenmis malzemeler (kayit sonrasi listede gosterilir). Satirlarda
-  // ayrica _tur ve malzemeAdi (client tarafinda) tutulur ki listede/duzenlemede kullanilsin.
-  const [eklenenMalzemeler, setEklenenMalzemeler] = useState([])
-  // Duzenlenen satir (varsa duzenleme modali acilir)
-  const [duzenlenen, setDuzenlenen] = useState(null)
-
-  // Bu kullanicinin alacagi siradaki dokum_no'yu backend'den getirir
-  const sonrakiNoGetir = async () => {
+  // Fetches the next dokum_no of this user from the backend
+  const fetchNextNo = async () => {
     try {
-      const res = await fetch(`${API}/dokum/sonraki-no?konverterNo=${konverterNo}`)
-      if (res.ok) setSonrakiNo(await res.json())
+      const res = await apiFetch(`/api/dokum/sonraki-no?konverterNo=${converterNo}`)
+      if (res.ok) setNextNo(await res.json())
     } catch {
-      // sessiz gec, numara gosterilemezse form yine calisir
+      // ignore silently, the form still works without the number
     }
   }
 
-  // Acilista siradaki dokum_no'yu getir
+  // Fetch the next dokum_no on mount
   useEffect(() => {
-    sonrakiNoGetir()
+    fetchNextNo()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Oturum yoksa login'e don
-  if (!kullaniciAdi || !seciliRol) {
+  // No session (token + role) -> back to login
+  if (!hasSession()) {
     return <Navigate to="/login" replace />
   }
 
-  const cikisYap = () => {
-    localStorage.removeItem('kullanici_id')
-    localStorage.removeItem('kullanici_adi')
-    localStorage.removeItem('secili_rol')
-    navigate('/login')
+  // Logout: tell the backend first (the refresh token is set to aktif = false),
+  // then clear the local session and go back to login.
+  const logout = async () => {
+    await logoutRequest()
+    navigate('/login', { replace: true })
   }
 
-  const alanDegistir = (name, value) => {
-    setForm((onceki) => ({ ...onceki, [name]: value }))
-    // Kullanici alani duzeltirken o alanin hatasini kaldir
-    setHatalar((h) => {
-      if (!h[name]) return h
-      const kalan = { ...h }
-      delete kalan[name]
-      return kalan
+  const changeField = (name, value) => {
+    setForm((previous) => ({ ...previous, [name]: value }))
+    // Clear the error of a field while the user is fixing it
+    setErrors((e) => {
+      if (!e[name]) return e
+      const rest = { ...e }
+      delete rest[name]
+      return rest
     })
   }
 
-  // Mevcut dokumu tamamen bitirir, sonraki dokume gecer: formu temizler,
-  // kayitli dokumu birakir ve siradaki dokum_no'yu tazeler.
-  const yeniDokum = () => {
-    setForm(BOS_FORM)
-    setFormMesaj(null)
-    setHatalar({})
-    setKayitliDokum(null)
-    // Malzeme bolumunu de sifirla: yeni dokum, yeni malzeme listesi
-    setSeciliKatki(null)
-    setMalzemeSecenekleri([])
-    setMalzemeForm(BOS_MALZEME_FORM)
-    setMalzemeHatalar({})
-    setMalzemeMesaj(null)
-    setEklenenMalzemeler([])
-    sonrakiNoGetir()
+  // Finishes the current heat completely and moves to the next one: clears the form, drops
+  // the saved heat and refreshes the next dokum_no.
+  const newHeat = () => {
+    setForm(EMPTY_FORM)
+    setFormMessage(null)
+    setErrors({})
+    setSavedHeat(null)
+    // Reset the material section too: new heat, new material list
+    setSelectedAdditive(null)
+    setMaterialOptions([])
+    setMaterialForm(EMPTY_MATERIAL_FORM)
+    setMaterialErrors({})
+    setMaterialMessage(null)
+    setAddedMaterials([])
+    fetchNextNo()
   }
 
-  // 4. ADIM: bir katki butonuna basilinca o ture ait malzemeleri combobox'a yukle
-  const katkiSec = async (tur) => {
-    setSeciliKatki(tur)
-    setMalzemeForm((f) => ({ ...f, malzemeKodu: '' })) // katki degisince secim sifirlanir
-    setMalzemeHatalar({})
-    setMalzemeMesaj(null)
-    setMalzemeYukleniyor(true)
-    try {
-      const res = await fetch(`${API}/malzeme?tur=${tur}`)
-      setMalzemeSecenekleri(res.ok ? await res.json() : [])
-    } catch {
-      setMalzemeSecenekleri([])
-    } finally {
-      setMalzemeYukleniyor(false)
-    }
-  }
-
-  const malzemeAlanDegistir = (name, value) => {
-    setMalzemeForm((f) => ({ ...f, [name]: value }))
-    setMalzemeHatalar((h) => {
-      if (!h[name]) return h
-      const kalan = { ...h }
-      delete kalan[name]
-      return kalan
-    })
-  }
-
-  // 5. ADIM: secili malzemeyi o anki dokume ekler ve alttaki listeye yansitir
-  const malzemeEkle = async (e) => {
-    e.preventDefault()
-    if (!kayitli) return
-    setMalzemeMesaj(null)
-
-    const yeniHatalar = {}
-    if (!malzemeForm.malzemeKodu) yeniHatalar.malzemeKodu = 'Malzeme seçiniz'
-    if (malzemeForm.miktar === '') yeniHatalar.miktar = 'Miktar giriniz'
-    else if (Number(malzemeForm.miktar) <= 0) yeniHatalar.miktar = "Miktar 0'dan büyük olmalı"
-    if (!malzemeForm.malzemeVerilisTarihi) yeniHatalar.malzemeVerilisTarihi = 'Tarih giriniz'
-    if (Object.keys(yeniHatalar).length > 0) {
-      setMalzemeHatalar(yeniHatalar)
+  // Refresh: fetches the heat being worked on from the backend again and refreshes the form
+  // plus the material list (changes made from Postman/the automation show up here).
+  // IMPORTANT: it does NOT ask for the next dokum_no again; it stays on the same number, so
+  // it does not "jump" to another heat while the automation keeps adding new heats.
+  //  - With a loaded heat it is refreshed by dokum_id.
+  //  - Without one, it loads the record created (by the event flow) for the dokum_no on
+  //    screen; when there is none yet it shows an info message (the user is still creating it).
+  const refresh = async () => {
+    if (saved) {
+      showDetail(savedHeat.dokumId)
       return
     }
-    setMalzemeHatalar({})
-
-    setMalzemeKaydediliyor(true)
+    if (nextNo == null) return
     try {
-      const payload = {
-        malzemeKodu: Number(malzemeForm.malzemeKodu),
-        miktar: Number(malzemeForm.miktar),
-        malzemeVerilisTarihi: malzemeForm.malzemeVerilisTarihi,
-        kullaniciId: Number(kullaniciId),
+      const res = await apiFetch(`/api/dokum/no/${nextNo}`)
+      if (res.ok) {
+        const { dokum, malzemeler } = await res.json()
+        loadHeatIntoForm(dokum, malzemeler)
+      } else {
+        setFormMessage({ type: 'error', text: `Döküm No: ${nextNo} için henüz kayıt yok.` })
       }
-      const res = await fetch(`${API}/dokum/${kayitliDokum.dokumId}/malzeme`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      if (!res.ok) {
-        // Backend dogrulama hatasi (400) mesajini goster; yoksa genel hata
-        const metin = await res.text().catch(() => '')
-        setMalzemeMesaj({ tip: 'hata', metin: metin || 'Malzeme eklenemedi' })
-        return
-      }
-      const kaydedilen = await res.json()
-      // Backend malzeme_adi doldurmaz; secili combobox'tan adi ve turu satira ekliyoruz
-      const ad = malzemeSecenekleri.find((m) => m.malzemeKodu === payload.malzemeKodu)?.malzemeAdi
-      setEklenenMalzemeler((prev) => [...prev, { ...kaydedilen, malzemeAdi: ad, _tur: seciliKatki }])
-      // Miktar ve tarih temizlenir, katki secili kalir (art arda ekleme kolay olsun)
-      setMalzemeForm((f) => ({ ...f, malzemeKodu: '', miktar: '', malzemeVerilisTarihi: '' }))
-      setMalzemeMesaj({ tip: 'ok', metin: 'Malzeme eklendi' })
-    } catch {
-      setMalzemeMesaj({ tip: 'hata', metin: 'Sunucuya bağlanılamadı' })
-    } finally {
-      setMalzemeKaydediliyor(false)
+    } catch (e) {
+      if (e instanceof SessionError) return
+      setFormMessage({ type: 'error', text: 'Sunucuya bağlanılamadı' })
     }
   }
 
-  // 6. ADIM: listeden bir malzemeyi siler
-  const malzemeSil = async (kullanimId) => {
+  // STEP 4: pressing an additive button loads the materials of that type into the combobox
+  const selectAdditive = async (type) => {
+    setSelectedAdditive(type)
+    setMaterialForm((f) => ({ ...f, malzemeKodu: '' })) // the selection resets with the additive
+    setMaterialErrors({})
+    setMaterialMessage(null)
+    setMaterialsLoading(true)
     try {
-      const res = await fetch(`${API}/dokum/${kayitliDokum.dokumId}/malzeme/${kullanimId}`, {
+      const res = await apiFetch(`/api/malzeme?tur=${type}`)
+      setMaterialOptions(res.ok ? await res.json() : [])
+    } catch {
+      // SessionError included: the options stay empty, on a 401 we are heading to login anyway
+      setMaterialOptions([])
+    } finally {
+      setMaterialsLoading(false)
+    }
+  }
+
+  const changeMaterialField = (name, value) => {
+    setMaterialForm((f) => ({ ...f, [name]: value }))
+    setMaterialErrors((e) => {
+      if (!e[name]) return e
+      const rest = { ...e }
+      delete rest[name]
+      return rest
+    })
+  }
+
+  // STEP 5: adds the selected material to the current heat and puts it into the list below
+  const addMaterial = async (e) => {
+    e.preventDefault()
+    if (!saved) return
+    setMaterialMessage(null)
+
+    const newErrors = {}
+    if (!materialForm.malzemeKodu) newErrors.malzemeKodu = 'Malzeme seçiniz'
+    if (materialForm.miktar === '') newErrors.miktar = 'Miktar giriniz'
+    else if (Number(materialForm.miktar) <= 0) newErrors.miktar = "Miktar 0'dan büyük olmalı"
+    if (!materialForm.malzemeVerilisTarihi) newErrors.malzemeVerilisTarihi = 'Tarih giriniz'
+    if (Object.keys(newErrors).length > 0) {
+      setMaterialErrors(newErrors)
+      return
+    }
+    setMaterialErrors({})
+
+    setMaterialSaving(true)
+    try {
+      const payload = {
+        malzemeKodu: Number(materialForm.malzemeKodu),
+        miktar: Number(materialForm.miktar),
+        malzemeVerilisTarihi: materialForm.malzemeVerilisTarihi,
+        kullaniciId: Number(userId),
+      }
+      const res = await apiFetch(`/api/dokum/${savedHeat.dokumId}/malzeme`, {
+        method: 'POST',
+        body: payload,
+      })
+      if (!res.ok) {
+        // Show the backend validation error (400); fall back to a generic message
+        const text = await res.text().catch(() => '')
+        setMaterialMessage({ type: 'error', text: text || 'Malzeme eklenemedi' })
+        return
+      }
+      const savedMaterial = await res.json()
+      // The backend does not fill malzeme_adi here; we take the name and type from the
+      // selected combobox entry and put them on the row
+      const name = materialOptions.find((m) => m.malzemeKodu === payload.malzemeKodu)?.malzemeAdi
+      setAddedMaterials((prev) => [
+        ...prev,
+        { ...savedMaterial, malzemeAdi: name, _type: selectedAdditive },
+      ])
+      // Quantity and date are cleared, the additive stays selected (easy consecutive adds)
+      setMaterialForm((f) => ({ ...f, malzemeKodu: '', miktar: '', malzemeVerilisTarihi: '' }))
+      setMaterialMessage({ type: 'ok', text: 'Malzeme eklendi' })
+    } catch (e) {
+      if (e instanceof SessionError) return
+      setMaterialMessage({ type: 'error', text: 'Sunucuya bağlanılamadı' })
+    } finally {
+      setMaterialSaving(false)
+    }
+  }
+
+  // STEP 6: deletes a material from the list
+  const deleteMaterial = async (usageId) => {
+    try {
+      const res = await apiFetch(`/api/dokum/${savedHeat.dokumId}/malzeme/${usageId}`, {
         method: 'DELETE',
       })
       if (res.ok) {
-        setEklenenMalzemeler((prev) => prev.filter((m) => m.kullanimId !== kullanimId))
+        setAddedMaterials((prev) => prev.filter((m) => m.kullanimId !== usageId))
       }
     } catch {
-      // sessiz gec; silinemezse liste degismez
+      // ignore silently; the list stays as it is when the delete fails
     }
   }
 
-  // Duzenleme modali kaydedince listedeki satiri gunceller
-  const malzemeGuncellendi = (guncel) => {
-    setEklenenMalzemeler((prev) =>
-      prev.map((m) => (m.kullanimId === guncel.kullanimId ? guncel : m)),
+  // Updates the row in the list once the edit row saves
+  const materialUpdated = (updated) => {
+    setAddedMaterials((prev) =>
+      prev.map((m) => (m.kullanimId === updated.kullanimId ? updated : m)),
     )
-    setDuzenlenen(null)
+    setEditingRow(null)
   }
 
-  const dokumKaydet = async (e) => {
+  const saveHeat = async (e) => {
     e.preventDefault()
-    // Zaten kaydedildiyse tekrar kaydetme (backend yeni kayit olusturur, duplike olur)
-    if (kayitli) return
-    setFormMesaj(null)
+    // Do not save again when it is already saved (the backend would create a duplicate)
+    if (saved) return
+    setFormMessage(null)
 
-    // Alan bazli dogrulama: bos olamaz + sicaklik araligi. Hatalar her alanin altinda gosterilir.
-    const yeniHatalar = {}
-    for (const alan of DOKUM_ALANLARI) {
-      const deger = form[alan.name]
-      if (deger === '' || deger == null) {
-        yeniHatalar[alan.name] = 'Bu alan boş bırakılamaz'
+    // Per field validation: cannot be empty + temperature range. The errors are shown under
+    // each field.
+    const newErrors = {}
+    for (const field of HEAT_FIELDS) {
+      const value = form[field.name]
+      if (value === '' || value == null) {
+        newErrors[field.name] = 'Bu alan boş bırakılamaz'
         continue
       }
-      if (alan.type === 'number' && alan.min != null) {
-        const sayi = Number(deger)
-        if (sayi < alan.min || sayi > alan.max) {
-          yeniHatalar[alan.name] = `${alan.min}-${alan.max} aralığında olmalı`
+      if (field.type === 'number' && field.min != null) {
+        const number = Number(value)
+        if (number < field.min || number > field.max) {
+          newErrors[field.name] = `${field.min}-${field.max} aralığında olmalı`
         }
       }
     }
 
-    // Zaman siralamasi: her zaman kendinden onceki islem zamanindan once olamaz.
-    // Bos alanlar zaten yukarida hata aldigi icin burada atlanir.
-    for (let i = 1; i < ZAMAN_SIRASI.length; i++) {
-      const oncekiAd = ZAMAN_SIRASI[i - 1]
-      const suankiAd = ZAMAN_SIRASI[i]
-      const onceki = form[oncekiAd]
-      const suanki = form[suankiAd]
-      if (onceki && suanki && !yeniHatalar[suankiAd] && new Date(suanki) < new Date(onceki)) {
-        yeniHatalar[suankiAd] = `${ALAN_ETIKET[oncekiAd]} zamanından önce olamaz`
+    // Time ordering: no time may come before the process time preceding it.
+    // Empty fields already got an error above, so they are skipped here.
+    for (let i = 1; i < TIME_ORDER.length; i++) {
+      const previousName = TIME_ORDER[i - 1]
+      const currentName = TIME_ORDER[i]
+      const previous = form[previousName]
+      const current = form[currentName]
+      if (previous && current && !newErrors[currentName] && new Date(current) < new Date(previous)) {
+        newErrors[currentName] = `${FIELD_LABELS[previousName]} zamanından önce olamaz`
       }
     }
 
-    if (Object.keys(yeniHatalar).length > 0) {
-      setHatalar(yeniHatalar)
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors)
       return
     }
-    setHatalar({})
+    setErrors({})
 
-    setKaydediliyor(true)
+    setSaving(true)
     try {
-      // Bos alanlar null gonderilir, sayilar Number'a cevrilir.
-      // konverterNo secilen rolden gelir (formda yok), dokum_no bununla uretilir.
-      const payload = { kullaniciId: Number(kullaniciId), konverterNo }
-      for (const alan of DOKUM_ALANLARI) {
-        const deger = form[alan.name]
-        if (deger === '' || deger == null) {
-          payload[alan.name] = null
-        } else if (alan.type === 'number') {
-          payload[alan.name] = Number(deger)
+      // Empty fields are sent as null, numbers are converted with Number().
+      // converterNo comes from the selected role (it is not on the form) and dokum_no is
+      // derived from it.
+      const payload = { kullaniciId: Number(userId), konverterNo: converterNo }
+      for (const field of HEAT_FIELDS) {
+        const value = form[field.name]
+        if (value === '' || value == null) {
+          payload[field.name] = null
+        } else if (field.type === 'number') {
+          payload[field.name] = Number(value)
         } else {
-          payload[alan.name] = deger
+          payload[field.name] = value
         }
       }
 
-      const res = await fetch(`${API}/dokum`, {
+      const res = await apiFetch('/api/dokum', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: payload,
       })
       if (!res.ok) {
-        // Backend dogrulama hatasi (400) mesajini goster; yoksa genel hata
-        const metin = await res.text().catch(() => '')
-        setFormMesaj({
-          tip: 'hata',
-          metin: metin || 'Döküm kaydedilemedi (sunucu hatası)',
+        // Show the backend validation error (400); fall back to a generic message
+        const text = await res.text().catch(() => '')
+        setFormMessage({
+          type: 'error',
+          text: text || 'Döküm kaydedilemedi (sunucu hatası)',
         })
         return
       }
-      const kaydedilen = await res.json()
-      // Dokum kaydedildi ama forma dokunulmaz ve numara ILERLEMEZ: bu dokume hala
-      // malzeme eklenecek. Form kilitlenir; "Yeni Dokum" ile siradaki dokume gecilir.
-      setKayitliDokum(kaydedilen)
-      setFormMesaj({
-        tip: 'ok',
-        metin: `Döküm kaydedildi (No: ${kaydedilen.dokumNo ?? kaydedilen.dokumId}). Malzeme ekleyebilir veya "Yeni Döküm" ile sonraki döküme geçebilirsiniz.`,
+      const savedRecord = await res.json()
+      // The heat is saved but the form is untouched and the number does NOT advance: this
+      // heat still needs its materials. The form locks; "Yeni Döküm" moves to the next heat.
+      setSavedHeat(savedRecord)
+      setFormMessage({
+        type: 'ok',
+        text: `Döküm kaydedildi (No: ${savedRecord.dokumNo ?? savedRecord.dokumId}). Malzeme ekleyebilir veya "Yeni Döküm" ile sonraki döküme geçebilirsiniz.`,
       })
-    } catch {
-      setFormMesaj({ tip: 'hata', metin: 'Sunucuya bağlanılamadı' })
+    } catch (e) {
+      if (e instanceof SessionError) return
+      setFormMessage({ type: 'error', text: 'Sunucuya bağlanılamadı' })
     } finally {
-      setKaydediliyor(false)
+      setSaving(false)
     }
   }
 
-  const dokumleriListele = async () => {
-    setListeAcik(true)
-    setListeHata('')
-    setListeYukleniyor(true)
+  const listHeats = async () => {
+    setListOpen(true)
+    setListError('')
+    setListLoading(true)
     try {
-      const res = await fetch(`${API}/dokum`)
+      const res = await apiFetch('/api/dokum')
       if (!res.ok) {
-        setListeHata('Dökümler alınamadı')
+        setListError('Dökümler alınamadı')
         return
       }
-      setDokumler(await res.json())
-    } catch {
-      setListeHata('Sunucuya bağlanılamadı')
+      setHeats(await res.json())
+    } catch (e) {
+      if (e instanceof SessionError) return
+      setListError('Sunucuya bağlanılamadı')
     } finally {
-      setListeYukleniyor(false)
+      setListLoading(false)
     }
   }
 
-  const detayGor = async (id) => {
-    setDetay(null)
-    setDetayYukleniyor(true)
+  // Fills a heat + its materials into the main form and the list below; puts the heat into
+  // "saved" mode (form locked, No visible, open for adding materials). Shared by showDetail
+  // and refresh.
+  const loadHeatIntoForm = (heat, materials) => {
+    // Fill the heat fields into the form. datetime-local expects "YYYY-MM-DDTHH:mm", so the
+    // first 16 characters of the backend ISO string are enough. The rest becomes a string.
+    const newForm = {}
+    for (const field of HEAT_FIELDS) {
+      const value = heat[field.name]
+      if (value == null) {
+        newForm[field.name] = ''
+      } else if (field.type === 'datetime-local') {
+        newForm[field.name] = String(value).slice(0, 16)
+      } else {
+        newForm[field.name] = String(value)
+      }
+    }
+    setForm(newForm)
+    setErrors({})
+    setFormMessage({
+      type: 'ok',
+      text: `Döküm No: ${heat.dokumNo} yüklendi. Malzemeleri aşağıda görebilir, ekleme/düzenleme yapabilirsiniz.`,
+    })
+    setSavedHeat(heat)
+
+    // Put the materials into the list below (the detail sends the type as "malzemeTuru",
+    // the list expects "_type")
+    setAddedMaterials(materials.map((m) => ({ ...m, _type: m.malzemeTuru })))
+
+    // Reset the material form and close the list
+    setSelectedAdditive(null)
+    setMaterialOptions([])
+    setMaterialForm(EMPTY_MATERIAL_FORM)
+    setMaterialErrors({})
+    setMaterialMessage(null)
+    setListOpen(false)
+  }
+
+  // "Detay Gör": fills the heat into the fields of the main form (instead of a popup) and
+  // its materials into the list below, looked up by dokum_id.
+  const showDetail = async (id) => {
     try {
-      const res = await fetch(`${API}/dokum/${id}`)
+      const res = await apiFetch(`/api/dokum/${id}`)
       if (!res.ok) return
-      setDetay(await res.json())
+      const { dokum, malzemeler } = await res.json()
+      loadHeatIntoForm(dokum, malzemeler)
     } catch {
-      // sessiz gec, detay acilmaz
-    } finally {
-      setDetayYukleniyor(false)
+      // ignore silently, the detail cannot be loaded
     }
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* 1. ADIM: Ust bar - giris yapan kisi + cikis */}
+      {/* STEP 1: top bar - the logged in user + logout */}
       <header className="bg-brand-700 text-white shadow">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-8 py-4">
           <h1 className="text-xl font-bold">İsdemir Döküm Paneli</h1>
           <div className="flex items-center gap-4">
             <div className="text-right leading-tight">
-              <p className="font-semibold">{kullaniciAdi}</p>
-              <p className="text-sm text-brand-100">Rol: {seciliRol}</p>
+              <p className="font-semibold">{username}</p>
+              <p className="text-sm text-brand-100">Rol: {selectedRole}</p>
             </div>
-            <Button variant="secondary" size="sm" onClick={cikisYap}>
+            <Button variant="secondary" size="sm" onClick={logout}>
               Çıkış Yap
             </Button>
           </div>
@@ -413,50 +488,53 @@ function Dashboard() {
       </header>
 
       <main className="mx-auto max-w-7xl px-8 py-6">
-        {/* 2 + 3. ADIM: butonlar + her zaman gorunen dokum ekleme formu */}
+        {/* STEPS 2 + 3: the buttons + the always visible heat form */}
         <div className="mb-4 flex gap-3">
-          <Button onClick={dokumleriListele}>Dökümleri Listele</Button>
-          <Button variant="outline" onClick={yeniDokum}>
+          <Button onClick={listHeats}>Dökümleri Listele</Button>
+          <Button variant="outline" onClick={newHeat}>
             Yeni Döküm
+          </Button>
+          <Button variant="outline" onClick={refresh} disabled={nextNo == null}>
+            Yenile
           </Button>
         </div>
 
         <section className="rounded-2xl bg-white p-6 shadow">
           <h2 className="mb-4 text-lg font-bold text-brand-700">Yeni Döküm Ekle</h2>
 
-          {/* Kaydedilecek dokum_no - degistirilemez, sadece bilgi amacli */}
+          {/* The dokum_no that will be saved - read only, for information */}
           <div className="mb-4 flex items-center gap-3 rounded-lg bg-brand-50 px-4 py-3">
             <span className="text-sm font-medium text-gray-600">Döküm No:</span>
             <span className="text-lg font-bold text-brand-700">
-              {kayitli ? kayitliDokum.dokumNo : (sonrakiNo ?? '...')}
+              {saved ? savedHeat.dokumNo : (nextNo ?? '...')}
             </span>
           </div>
 
-          <form onSubmit={dokumKaydet}>
+          <form onSubmit={saveHeat}>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {DOKUM_ALANLARI.map((alan) => (
-                <div key={alan.name}>
+              {HEAT_FIELDS.map((field) => (
+                <div key={field.name}>
                   <label className="mb-1 block text-sm font-medium text-gray-700">
-                    {alan.label}
+                    {field.label}
                     <span className="ml-0.5 text-red-500">*</span>
-                    {alan.min != null && (
+                    {field.min != null && (
                       <span className="ml-1 text-xs font-normal text-gray-400">
-                        ({alan.min}-{alan.max})
+                        ({field.min}-{field.max})
                       </span>
                     )}
                   </label>
-                  {alan.type === 'select' ? (
+                  {field.type === 'select' ? (
                     <select
-                      value={form[alan.name]}
-                      disabled={kayitli}
-                      onChange={(e) => alanDegistir(alan.name, e.target.value)}
+                      value={form[field.name]}
+                      disabled={saved}
+                      onChange={(e) => changeField(field.name, e.target.value)}
                       className={
                         'w-full rounded-lg border bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-gray-100 disabled:text-gray-500 ' +
-                        (hatalar[alan.name] ? 'border-red-400' : 'border-gray-300')
+                        (errors[field.name] ? 'border-red-400' : 'border-gray-300')
                       }
                     >
                       <option value="">Seçiniz</option>
-                      {alan.options.map((o) => (
+                      {field.options.map((o) => (
                         <option key={o.value} value={o.value}>
                           {o.label}
                         </option>
@@ -464,95 +542,95 @@ function Dashboard() {
                     </select>
                   ) : (
                     <input
-                      type={alan.type}
-                      value={form[alan.name]}
-                      min={alan.min}
-                      max={alan.max}
-                      disabled={kayitli}
-                      onChange={(e) => alanDegistir(alan.name, e.target.value)}
+                      type={field.type}
+                      value={form[field.name]}
+                      min={field.min}
+                      max={field.max}
+                      disabled={saved}
+                      onChange={(e) => changeField(field.name, e.target.value)}
                       className={
                         'w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-gray-100 disabled:text-gray-500 ' +
-                        (hatalar[alan.name] ? 'border-red-400' : 'border-gray-300')
+                        (errors[field.name] ? 'border-red-400' : 'border-gray-300')
                       }
                     />
                   )}
-                  {hatalar[alan.name] && (
-                    <p className="mt-1 text-xs text-red-600">{hatalar[alan.name]}</p>
+                  {errors[field.name] && (
+                    <p className="mt-1 text-xs text-red-600">{errors[field.name]}</p>
                   )}
                 </div>
               ))}
             </div>
 
-            {formMesaj && (
+            {formMessage && (
               <p
                 className={
                   'mt-4 rounded-lg border px-3 py-2 text-sm ' +
-                  (formMesaj.tip === 'ok'
+                  (formMessage.type === 'ok'
                     ? 'border-green-200 bg-green-50 text-green-700'
                     : 'border-red-200 bg-red-50 text-red-600')
                 }
               >
-                {formMesaj.metin}
+                {formMessage.text}
               </p>
             )}
 
             <div className="mt-4">
-              <Button type="submit" disabled={kaydediliyor || kayitli}>
-                {kaydediliyor ? 'Kaydediliyor...' : kayitli ? 'Kaydedildi ✓' : 'Kaydet'}
+              <Button type="submit" disabled={saving || saved}>
+                {saving ? 'Kaydediliyor...' : saved ? 'Kaydedildi ✓' : 'Kaydet'}
               </Button>
             </div>
           </form>
         </section>
 
-        {/* 4-5-6. ADIM: Malzeme ekleme bolumu (dokum kaydedildikten sonra aktif) */}
+        {/* STEPS 4-5-6: the material section (active once the heat is saved) */}
         <section className="mt-6 rounded-2xl bg-white p-6 shadow">
           <h2 className="mb-1 text-lg font-bold text-brand-700">Malzeme Ekle</h2>
-          {!kayitli && (
+          {!saved && (
             <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
               Malzeme ekleyebilmek için önce yukarıdan dökümü kaydedin.
             </p>
           )}
 
-          {/* 4. ADIM: katki butonlari - once katki secilir, malzemeler ona gore gelir */}
+          {/* STEP 4: the additive buttons - the additive is picked first, the materials follow */}
           <div className="mb-4 flex flex-wrap gap-3">
-            {KATKILAR.map((k) => (
+            {ADDITIVES.map((a) => (
               <Button
-                key={k.tur}
-                variant={seciliKatki === k.tur ? 'primary' : 'outline'}
-                disabled={!kayitli}
-                onClick={() => katkiSec(k.tur)}
+                key={a.type}
+                variant={selectedAdditive === a.type ? 'primary' : 'outline'}
+                disabled={!saved}
+                onClick={() => selectAdditive(a.type)}
               >
-                {k.label}
+                {a.label}
               </Button>
             ))}
           </div>
 
-          {/* 5. ADIM: secili katkiya ait malzeme bilgileri girilir */}
-          {kayitli && seciliKatki && (
-            <form onSubmit={malzemeEkle} className="mb-6">
+          {/* STEP 5: the material details of the selected additive are entered */}
+          {saved && selectedAdditive && (
+            <form onSubmit={addMaterial} className="mb-6">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div className="sm:col-span-3">
                   <label className="mb-1 block text-sm font-medium text-gray-700">
                     Malzeme<span className="ml-0.5 text-red-500">*</span>
                   </label>
                   <select
-                    value={malzemeForm.malzemeKodu}
-                    disabled={malzemeYukleniyor}
-                    onChange={(e) => malzemeAlanDegistir('malzemeKodu', e.target.value)}
+                    value={materialForm.malzemeKodu}
+                    disabled={materialsLoading}
+                    onChange={(e) => changeMaterialField('malzemeKodu', e.target.value)}
                     className={
                       'w-full rounded-lg border bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-gray-100 ' +
-                      (malzemeHatalar.malzemeKodu ? 'border-red-400' : 'border-gray-300')
+                      (materialErrors.malzemeKodu ? 'border-red-400' : 'border-gray-300')
                     }
                   >
-                    <option value="">{malzemeYukleniyor ? 'Yükleniyor...' : 'Seçiniz'}</option>
-                    {malzemeSecenekleri.map((m) => (
+                    <option value="">{materialsLoading ? 'Yükleniyor...' : 'Seçiniz'}</option>
+                    {materialOptions.map((m) => (
                       <option key={m.malzemeKodu} value={m.malzemeKodu}>
                         {m.malzemeKodu} - {m.malzemeAdi}
                       </option>
                     ))}
                   </select>
-                  {malzemeHatalar.malzemeKodu && (
-                    <p className="mt-1 text-xs text-red-600">{malzemeHatalar.malzemeKodu}</p>
+                  {materialErrors.malzemeKodu && (
+                    <p className="mt-1 text-xs text-red-600">{materialErrors.malzemeKodu}</p>
                   )}
                 </div>
 
@@ -563,15 +641,15 @@ function Dashboard() {
                   <input
                     type="number"
                     min={1}
-                    value={malzemeForm.miktar}
-                    onChange={(e) => malzemeAlanDegistir('miktar', e.target.value)}
+                    value={materialForm.miktar}
+                    onChange={(e) => changeMaterialField('miktar', e.target.value)}
                     className={
                       'w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500 ' +
-                      (malzemeHatalar.miktar ? 'border-red-400' : 'border-gray-300')
+                      (materialErrors.miktar ? 'border-red-400' : 'border-gray-300')
                     }
                   />
-                  {malzemeHatalar.miktar && (
-                    <p className="mt-1 text-xs text-red-600">{malzemeHatalar.miktar}</p>
+                  {materialErrors.miktar && (
+                    <p className="mt-1 text-xs text-red-600">{materialErrors.miktar}</p>
                   )}
                 </div>
 
@@ -581,46 +659,46 @@ function Dashboard() {
                   </label>
                   <input
                     type="datetime-local"
-                    value={malzemeForm.malzemeVerilisTarihi}
-                    onChange={(e) => malzemeAlanDegistir('malzemeVerilisTarihi', e.target.value)}
+                    value={materialForm.malzemeVerilisTarihi}
+                    onChange={(e) => changeMaterialField('malzemeVerilisTarihi', e.target.value)}
                     className={
                       'w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500 ' +
-                      (malzemeHatalar.malzemeVerilisTarihi ? 'border-red-400' : 'border-gray-300')
+                      (materialErrors.malzemeVerilisTarihi ? 'border-red-400' : 'border-gray-300')
                     }
                   />
-                  {malzemeHatalar.malzemeVerilisTarihi && (
-                    <p className="mt-1 text-xs text-red-600">{malzemeHatalar.malzemeVerilisTarihi}</p>
+                  {materialErrors.malzemeVerilisTarihi && (
+                    <p className="mt-1 text-xs text-red-600">{materialErrors.malzemeVerilisTarihi}</p>
                   )}
                 </div>
               </div>
 
-              {malzemeMesaj && (
+              {materialMessage && (
                 <p
                   className={
                     'mt-4 rounded-lg border px-3 py-2 text-sm ' +
-                    (malzemeMesaj.tip === 'ok'
+                    (materialMessage.type === 'ok'
                       ? 'border-green-200 bg-green-50 text-green-700'
                       : 'border-red-200 bg-red-50 text-red-600')
                   }
                 >
-                  {malzemeMesaj.metin}
+                  {materialMessage.text}
                 </p>
               )}
 
               <div className="mt-4">
-                <Button type="submit" disabled={malzemeKaydediliyor}>
-                  {malzemeKaydediliyor ? 'Ekleniyor...' : 'Malzeme Ekle'}
+                <Button type="submit" disabled={materialSaving}>
+                  {materialSaving ? 'Ekleniyor...' : 'Malzeme Ekle'}
                 </Button>
               </div>
             </form>
           )}
 
-          {/* 5-6. ADIM: bu dokume eklenen malzemeler listesi + sil/guncelle */}
+          {/* STEPS 5-6: the list of materials added to this heat + delete/update */}
           <div>
             <h3 className="mb-2 text-sm font-bold text-gray-700">
-              Eklenen Malzemeler ({eklenenMalzemeler.length})
+              Eklenen Malzemeler ({addedMaterials.length})
             </h3>
-            {eklenenMalzemeler.length === 0 ? (
+            {addedMaterials.length === 0 ? (
               <p className="text-sm text-gray-500">Henüz malzeme eklenmedi.</p>
             ) : (
               <table className="w-full text-left text-sm">
@@ -635,29 +713,29 @@ function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {eklenenMalzemeler.map((m) =>
-                    duzenlenen?.kullanimId === m.kullanimId ? (
-                      <MalzemeSatirDuzenle
+                  {addedMaterials.map((m) =>
+                    editingRow?.kullanimId === m.kullanimId ? (
+                      <MaterialRowEdit
                         key={m.kullanimId}
-                        satir={m}
-                        dokumId={kayitliDokum.dokumId}
-                        kullaniciId={kullaniciId}
-                        onKapat={() => setDuzenlenen(null)}
-                        onKaydedildi={malzemeGuncellendi}
+                        row={m}
+                        heatId={savedHeat.dokumId}
+                        userId={userId}
+                        onCancel={() => setEditingRow(null)}
+                        onSaved={materialUpdated}
                       />
                     ) : (
                       <tr key={m.kullanimId} className="border-b border-gray-100">
-                        <td className="py-2">{KATKI_ETIKET[m._tur] ?? m._tur ?? '-'}</td>
+                        <td className="py-2">{ADDITIVE_LABELS[m._type] ?? m._type ?? '-'}</td>
                         <td className="py-2">{m.malzemeKodu}</td>
                         <td className="py-2">{m.malzemeAdi ?? '-'}</td>
                         <td className="py-2">{m.miktar}</td>
-                        <td className="py-2">{tarihGoster(m.malzemeVerilisTarihi)}</td>
+                        <td className="py-2">{formatDate(m.malzemeVerilisTarihi)}</td>
                         <td className="py-2">
                           <div className="flex justify-end gap-2">
-                            <Button size="sm" variant="outline" onClick={() => setDuzenlenen(m)}>
+                            <Button size="sm" variant="outline" onClick={() => setEditingRow(m)}>
                               Güncelle
                             </Button>
-                            <Button size="sm" variant="secondary" onClick={() => malzemeSil(m.kullanimId)}>
+                            <Button size="sm" variant="secondary" onClick={() => deleteMaterial(m.kullanimId)}>
                               Sil
                             </Button>
                           </div>
@@ -672,29 +750,29 @@ function Dashboard() {
         </section>
       </main>
 
-      {/* 3. ADIM: Dokumleri listele popup'i */}
+      {/* STEP 3: the "list the heats" popup */}
       <Modal
-        open={listeAcik}
-        onClose={() => setListeAcik(false)}
+        open={listOpen}
+        onClose={() => setListOpen(false)}
         title="Dökümler"
         maxWidth="max-w-2xl"
       >
-        {listeYukleniyor && <p className="text-gray-500">Yükleniyor...</p>}
-        {listeHata && <p className="text-red-600">{listeHata}</p>}
-        {!listeYukleniyor && !listeHata && dokumler.length === 0 && (
+        {listLoading && <p className="text-gray-500">Yükleniyor...</p>}
+        {listError && <p className="text-red-600">{listError}</p>}
+        {!listLoading && !listError && heats.length === 0 && (
           <p className="text-gray-500">Kayıtlı döküm yok.</p>
         )}
-        {!listeYukleniyor && dokumler.length > 0 && (
+        {!listLoading && heats.length > 0 && (
           <ul className="divide-y divide-gray-100">
-            {dokumler.map((d) => (
-              <li key={d.dokumId} className="flex items-center justify-between py-3">
+            {heats.map((h) => (
+              <li key={h.dokumId} className="flex items-center justify-between py-3">
                 <div className="text-sm">
-                  <p className="font-semibold text-gray-800">Döküm No: {d.dokumNo}</p>
+                  <p className="font-semibold text-gray-800">Döküm No: {h.dokumNo}</p>
                   <p className="text-gray-500">
-                    {tarihGoster(d.dokumZamani)} · Sıcaklık: {d.dokumSicaklik ?? '-'}
+                    {formatDate(h.dokumZamani)} · Sıcaklık: {h.dokumSicaklik ?? '-'}
                   </p>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => detayGor(d.dokumId)}>
+                <Button size="sm" variant="outline" onClick={() => showDetail(h.dokumId)}>
                   Detay Gör
                 </Button>
               </li>
@@ -702,161 +780,99 @@ function Dashboard() {
           </ul>
         )}
       </Modal>
-
-      {/* 3. ADIM: Detay popup'i (listenin ustune biner) */}
-      <Modal
-        open={detay !== null || detayYukleniyor}
-        onClose={() => setDetay(null)}
-        title={detay ? `Döküm No: ${detay.dokum.dokumNo}` : 'Detay'}
-        maxWidth="max-w-2xl"
-      >
-        {detayYukleniyor && <p className="text-gray-500">Yükleniyor...</p>}
-        {detay && (
-          <div className="space-y-5">
-            <div>
-              <h3 className="mb-2 text-sm font-bold text-brand-700">Döküm Bilgileri</h3>
-              <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-                <DetaySatir etiket="Döküm ID" deger={detay.dokum.dokumId} />
-                <DetaySatir etiket="Döküm No" deger={detay.dokum.dokumNo} />
-                <DetaySatir etiket="Hurda Şarj Başlama" deger={tarihGoster(detay.dokum.hurdaSarjBaslamaZamani)} />
-                <DetaySatir etiket="Hurda Şarj Bitiş" deger={tarihGoster(detay.dokum.hurdaSarjBitisZamani)} />
-                <DetaySatir etiket="Ana Üflemeye Başlama" deger={tarihGoster(detay.dokum.anaUflemeyeBaslamaZamani)} />
-                <DetaySatir etiket="Ana Üfleme Bitiş" deger={tarihGoster(detay.dokum.anaUflemeBitisZamani)} />
-                <DetaySatir etiket="Döküm Zamanı" deger={tarihGoster(detay.dokum.dokumZamani)} />
-                <DetaySatir etiket="SHD Sıcaklık" deger={detay.dokum.shdSicaklik} />
-                <DetaySatir etiket="Döküm Sıcaklık" deger={detay.dokum.dokumSicaklik} />
-                <DetaySatir etiket="Lans Skal Durum" deger={detay.dokum.lansSkalDurum} />
-                <DetaySatir etiket="Kayıt Zamanı" deger={tarihGoster(detay.dokum.kayitZamani)} />
-                <DetaySatir etiket="Kullanıcı ID" deger={detay.dokum.kullaniciId} />
-              </dl>
-            </div>
-
-            <div>
-              <h3 className="mb-2 text-sm font-bold text-brand-700">
-                Malzemeler ({detay.malzemeler.length})
-              </h3>
-              {detay.malzemeler.length === 0 ? (
-                <p className="text-sm text-gray-500">Bu döküme eklenmiş malzeme yok.</p>
-              ) : (
-                <table className="w-full text-left text-sm">
-                  <thead className="text-gray-500">
-                    <tr className="border-b border-gray-200">
-                      <th className="py-2">Katkı</th>
-                      <th className="py-2">Malzeme Kodu</th>
-                      <th className="py-2">Malzeme Adı</th>
-                      <th className="py-2">Miktar (kg)</th>
-                      <th className="py-2">Veriliş Tarihi</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detay.malzemeler.map((m) => (
-                      <tr key={m.kullanimId} className="border-b border-gray-100">
-                        <td className="py-2">{KATKI_ETIKET[m.malzemeTuru] ?? m.malzemeTuru ?? '-'}</td>
-                        <td className="py-2">{m.malzemeKodu}</td>
-                        <td className="py-2">{m.malzemeAdi ?? '-'}</td>
-                        <td className="py-2">{m.miktar}</td>
-                        <td className="py-2">{tarihGoster(m.malzemeVerilisTarihi)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-        )}
-      </Modal>
     </div>
   )
 }
 
-// 6. ADIM: Malzeme guncelleme - listedeki satirin KENDI uzerinde (inline) yapilir.
-// Duzenlenen satir bir <tr> olarak render edilir; hucreler input/select'e donusur.
-// Satirin ait oldugu katkinin (_tur) malzemelerini yukler, mevcut degerleri onceden
-// doldurur, PUT ile gunceller.
-function MalzemeSatirDuzenle({ satir, dokumId, kullaniciId, onKapat, onKaydedildi }) {
-  const [tur, setTur] = useState(satir._tur ?? '')
-  const [secenekler, setSecenekler] = useState([])
-  const [yukleniyor, setYukleniyor] = useState(false)
+// STEP 6: updating a material - done inline, ON the row itself in the list.
+// The edited row is rendered as a <tr> whose cells turn into inputs/selects.
+// It loads the materials of the additive the row belongs to (_type), prefills the current
+// values and updates them with PUT.
+function MaterialRowEdit({ row, heatId, userId, onCancel, onSaved }) {
+  const [type, setType] = useState(row._type ?? '')
+  const [options, setOptions] = useState([])
+  const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({
-    malzemeKodu: String(satir.malzemeKodu ?? ''),
-    miktar: String(satir.miktar ?? ''),
-    // datetime-local "YYYY-MM-DDTHH:mm" bekler; backend'den gelen ISO'nun ilk 16 karakteri yeterli
-    malzemeVerilisTarihi: satir.malzemeVerilisTarihi
-      ? satir.malzemeVerilisTarihi.slice(0, 16)
+    malzemeKodu: String(row.malzemeKodu ?? ''),
+    miktar: String(row.miktar ?? ''),
+    // datetime-local expects "YYYY-MM-DDTHH:mm"; the first 16 characters of the backend ISO
+    // string are enough
+    malzemeVerilisTarihi: row.malzemeVerilisTarihi
+      ? row.malzemeVerilisTarihi.slice(0, 16)
       : '',
   })
-  const [kaydediliyor, setKaydediliyor] = useState(false)
-  const [hata, setHata] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
 
-  // Katki degisince o katkinin malzemelerini combobox'a yukle (acilista da calisir)
+  // When the additive changes, load its materials into the combobox (also runs on mount)
   useEffect(() => {
-    if (!tur) return
-    let iptal = false
-    setYukleniyor(true)
-    fetch(`${API}/malzeme?tur=${tur}`)
+    if (!type) return
+    let cancelled = false
+    setLoading(true)
+    apiFetch(`/api/malzeme?tur=${type}`)
       .then((r) => (r.ok ? r.json() : []))
       .then((d) => {
-        if (!iptal) setSecenekler(d)
+        if (!cancelled) setOptions(d)
       })
       .catch(() => {
-        if (!iptal) setSecenekler([])
+        if (!cancelled) setOptions([])
       })
       .finally(() => {
-        if (!iptal) setYukleniyor(false)
+        if (!cancelled) setLoading(false)
       })
     return () => {
-      iptal = true
+      cancelled = true
     }
-  }, [tur])
+  }, [type])
 
-  const kaydet = async () => {
-    setHata('')
+  const save = async () => {
+    setError('')
     if (!form.malzemeKodu || form.miktar === '' || !form.malzemeVerilisTarihi) {
-      setHata('Tüm alanları doldurun')
+      setError('Tüm alanları doldurun')
       return
     }
     if (Number(form.miktar) <= 0) {
-      setHata("Miktar 0'dan büyük olmalı")
+      setError("Miktar 0'dan büyük olmalı")
       return
     }
-    setKaydediliyor(true)
+    setSaving(true)
     try {
       const payload = {
         malzemeKodu: Number(form.malzemeKodu),
         miktar: Number(form.miktar),
         malzemeVerilisTarihi: form.malzemeVerilisTarihi,
-        kullaniciId: Number(kullaniciId),
+        kullaniciId: Number(userId),
       }
-      const res = await fetch(`${API}/dokum/${dokumId}/malzeme/${satir.kullanimId}`, {
+      const res = await apiFetch(`/api/dokum/${heatId}/malzeme/${row.kullanimId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: payload,
       })
       if (!res.ok) {
-        // Backend dogrulama hatasi (400) mesajini goster; yoksa genel hata
-        const metin = await res.text().catch(() => '')
-        setHata(metin || 'Güncellenemedi')
+        // Show the backend validation error (400); fall back to a generic message
+        const text = await res.text().catch(() => '')
+        setError(text || 'Güncellenemedi')
         return
       }
-      const guncel = await res.json()
-      const ad =
-        secenekler.find((m) => m.malzemeKodu === payload.malzemeKodu)?.malzemeAdi ??
-        satir.malzemeAdi
-      onKaydedildi({ ...guncel, malzemeAdi: ad, _tur: tur })
-    } catch {
-      setHata('Sunucuya bağlanılamadı')
+      const updated = await res.json()
+      const name =
+        options.find((m) => m.malzemeKodu === payload.malzemeKodu)?.malzemeAdi ??
+        row.malzemeAdi
+      onSaved({ ...updated, malzemeAdi: name, _type: type })
+    } catch (e) {
+      if (e instanceof SessionError) return
+      setError('Sunucuya bağlanılamadı')
     } finally {
-      setKaydediliyor(false)
+      setSaving(false)
     }
   }
 
-  // Malzeme Adi hucresinde secili malzemenin adi gosterilir (combobox degistikce guncellenir)
-  const seciliAd =
-    secenekler.find((m) => String(m.malzemeKodu) === form.malzemeKodu)?.malzemeAdi ??
-    satir.malzemeAdi ??
+  // The Malzeme Adı cell shows the name of the selected material (updated with the combobox)
+  const selectedName =
+    options.find((m) => String(m.malzemeKodu) === form.malzemeKodu)?.malzemeAdi ??
+    row.malzemeAdi ??
     '-'
 
-  const hucreInput =
+  const cellInput =
     'w-full rounded-lg border border-gray-300 bg-white px-2 py-1 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-gray-100'
 
   return (
@@ -864,16 +880,16 @@ function MalzemeSatirDuzenle({ satir, dokumId, kullaniciId, onKapat, onKaydedild
       <tr className="border-b border-gray-100 bg-brand-50/50 align-top">
         <td className="py-2 pr-2">
           <select
-            value={tur}
+            value={type}
             onChange={(e) => {
-              setTur(e.target.value)
+              setType(e.target.value)
               setForm((f) => ({ ...f, malzemeKodu: '' }))
             }}
-            className={hucreInput}
+            className={cellInput}
           >
-            {KATKILAR.map((k) => (
-              <option key={k.tur} value={k.tur}>
-                {k.label}
+            {ADDITIVES.map((a) => (
+              <option key={a.type} value={a.type}>
+                {a.label}
               </option>
             ))}
           </select>
@@ -881,26 +897,26 @@ function MalzemeSatirDuzenle({ satir, dokumId, kullaniciId, onKapat, onKaydedild
         <td className="py-2 pr-2">
           <select
             value={form.malzemeKodu}
-            disabled={yukleniyor}
+            disabled={loading}
             onChange={(e) => setForm((f) => ({ ...f, malzemeKodu: e.target.value }))}
-            className={hucreInput}
+            className={cellInput}
           >
-            <option value="">{yukleniyor ? 'Yükleniyor...' : 'Seçiniz'}</option>
-            {secenekler.map((m) => (
+            <option value="">{loading ? 'Yükleniyor...' : 'Seçiniz'}</option>
+            {options.map((m) => (
               <option key={m.malzemeKodu} value={m.malzemeKodu}>
                 {m.malzemeKodu} - {m.malzemeAdi}
               </option>
             ))}
           </select>
         </td>
-        <td className="py-2 pr-2 text-gray-500">{seciliAd}</td>
+        <td className="py-2 pr-2 text-gray-500">{selectedName}</td>
         <td className="py-2 pr-2">
           <input
             type="number"
             min={1}
             value={form.miktar}
             onChange={(e) => setForm((f) => ({ ...f, miktar: e.target.value }))}
-            className={hucreInput}
+            className={cellInput}
           />
         </td>
         <td className="py-2 pr-2">
@@ -908,38 +924,28 @@ function MalzemeSatirDuzenle({ satir, dokumId, kullaniciId, onKapat, onKaydedild
             type="datetime-local"
             value={form.malzemeVerilisTarihi}
             onChange={(e) => setForm((f) => ({ ...f, malzemeVerilisTarihi: e.target.value }))}
-            className={hucreInput}
+            className={cellInput}
           />
         </td>
         <td className="py-2">
           <div className="flex justify-end gap-2">
-            <Button size="sm" onClick={kaydet} disabled={kaydediliyor}>
-              {kaydediliyor ? '...' : 'Kaydet'}
+            <Button size="sm" onClick={save} disabled={saving}>
+              {saving ? '...' : 'Kaydet'}
             </Button>
-            <Button size="sm" variant="outline" onClick={onKapat} disabled={kaydediliyor}>
+            <Button size="sm" variant="outline" onClick={onCancel} disabled={saving}>
               İptal
             </Button>
           </div>
         </td>
       </tr>
-      {hata && (
+      {error && (
         <tr>
           <td colSpan={6} className="pb-2 text-xs text-red-600">
-            {hata}
+            {error}
           </td>
         </tr>
       )}
     </>
-  )
-}
-
-// Detay popup'inda tek bir "etiket: deger" satiri
-function DetaySatir({ etiket, deger }) {
-  return (
-    <div className="flex justify-between border-b border-gray-50 py-0.5">
-      <dt className="text-gray-500">{etiket}</dt>
-      <dd className="font-medium text-gray-800">{deger ?? '-'}</dd>
-    </div>
   )
 }
 

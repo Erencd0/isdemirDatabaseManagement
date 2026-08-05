@@ -1,72 +1,91 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Button from '../components/Button.jsx'
-
-const API_URL = 'http://localhost:8080/api/login'
+import {
+  clearSession,
+  loginRequest,
+  refreshAccessToken,
+  saveSession,
+  wasSessionDropped,
+} from '../api/client.js'
 
 function Login() {
   const navigate = useNavigate()
 
-  const [kullaniciAdi, setKullaniciAdi] = useState('')
-  const [parola, setParola] = useState('')
-  const [roller, setRoller] = useState([]) // login basarili olunca dolar
-  const [seciliRol, setSeciliRol] = useState('')
-  const [kullanici, setKullanici] = useState(null) // basarili login sonucu
-  const [hata, setHata] = useState('')
-  const [yukleniyor, setYukleniyor] = useState(false)
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [roles, setRoles] = useState([]) // filled once the login succeeds
+  const [selectedRole, setSelectedRole] = useState('')
+  const [user, setUser] = useState(null) // the successful login result
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false) // a token refresh is being tried
 
-  const girisYapildi = kullanici !== null // parola dogrulandi, rol bekleniyor
+  const passwordVerified = user !== null // password checked, waiting for a role
+
+  // When the access token expires a protected request gets a 401 and the user is sent here.
+  // In that case we first try to get a new access token from /auth/refresh, without asking
+  // for the password. On success we go straight back to the panel; when the refresh token is
+  // dead/revoked (logout) the normal login form is shown.
+  useEffect(() => {
+    if (!wasSessionDropped()) return
+
+    setRefreshing(true)
+    refreshAccessToken().then((succeeded) => {
+      if (succeeded) {
+        navigate('/dashboard', { replace: true })
+        return
+      }
+      clearSession()
+      setError('Oturumunuz sona erdi, lütfen tekrar giriş yapın')
+      setRefreshing(false)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setHata('')
+    setError('')
 
-    // Ikinci asama: parola dogrulandi, kullanici comboboxtan rol sectikten sonra giris tamamlanir
-    if (girisYapildi) {
-      if (!seciliRol) {
-        setHata('Lütfen bir rol seçin')
+    // Second phase: the password is verified, the login completes once the user picks a role
+    if (passwordVerified) {
+      if (!selectedRole) {
+        setError('Lütfen bir rol seçin')
         return
       }
-      localStorage.setItem('kullanici_id', String(kullanici.kullanici_id))
-      localStorage.setItem('kullanici_adi', kullanici.kullanici_adi)
-      localStorage.setItem('secili_rol', seciliRol)
+      // The access + refresh tokens are stored together with the user information;
+      // requests to the protected endpoints use that access token.
+      saveSession({ user, selectedRole })
       navigate('/dashboard')
       return
     }
 
-    // Ilk asama: kullanici adi / parola ile backend'e istek
-    setYukleniyor(true)
+    // First phase: send the username / password to the backend
+    setLoading(true)
     try {
-      const res = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          kullanici_adi: kullaniciAdi,
-          kullanici_parola: parola,
-        }),
-      })
+      const res = await loginRequest(username, password)
 
       if (res.status === 401) {
-        setHata('Kullanıcı adı veya parola hatalı')
+        setError('Kullanıcı adı veya parola hatalı')
         return
       }
       if (res.status === 403) {
-        setHata('Bu kullanıcının giriş yetkisi yok')
+        setError('Bu kullanıcının giriş yetkisi yok')
         return
       }
       if (!res.ok) {
-        setHata('Bir hata oluştu, lütfen tekrar deneyin')
+        setError('Bir hata oluştu, lütfen tekrar deneyin')
         return
       }
 
       const data = await res.json()
-      setKullanici(data)
-      setRoller(data.roller || [])
-      setSeciliRol('') // tek rol olsa bile otomatik secilmez
+      setUser(data)
+      setRoles(data.roller || [])
+      setSelectedRole('') // never auto selected, even with a single role
     } catch {
-      setHata('Sunucuya bağlanılamadı')
+      setError('Sunucuya bağlanılamadı')
     } finally {
-      setYukleniyor(false)
+      setLoading(false)
     }
   }
 
@@ -74,7 +93,9 @@ function Login() {
     <div className="min-h-screen flex items-center justify-center bg-brand-700 p-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8">
         <h1 className="text-3xl font-bold text-brand-700 text-center mb-1">İsdemir</h1>
-        <p className="text-center text-gray-500 mb-6">Giriş Yap</p>
+        <p className="text-center text-gray-500 mb-6">
+          {refreshing ? 'Oturum yenileniyor...' : 'Giriş Yap'}
+        </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -83,9 +104,9 @@ function Login() {
             </label>
             <input
               type="text"
-              value={kullaniciAdi}
-              onChange={(e) => setKullaniciAdi(e.target.value)}
-              disabled={girisYapildi}
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              disabled={passwordVerified}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-gray-100 disabled:text-gray-500"
             />
           </div>
@@ -96,9 +117,9 @@ function Login() {
             </label>
             <input
               type="password"
-              value={parola}
-              onChange={(e) => setParola(e.target.value)}
-              disabled={girisYapildi}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={passwordVerified}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-gray-100 disabled:text-gray-500"
             />
           </div>
@@ -108,30 +129,30 @@ function Login() {
               Rol
             </label>
             <select
-              value={seciliRol}
-              onChange={(e) => setSeciliRol(e.target.value)}
-              disabled={!girisYapildi}
+              value={selectedRole}
+              onChange={(e) => setSelectedRole(e.target.value)}
+              disabled={!passwordVerified}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-gray-100 disabled:text-gray-400"
             >
               <option value="">
-                {girisYapildi ? 'Rol seçin' : 'Giriş yapılmadı'}
+                {passwordVerified ? 'Rol seçin' : 'Giriş yapılmadı'}
               </option>
-              {roller.map((rol) => (
-                <option key={rol} value={rol}>
-                  {rol}
+              {roles.map((role) => (
+                <option key={role} value={role}>
+                  {role}
                 </option>
               ))}
             </select>
           </div>
 
-          {hata && (
+          {error && (
             <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-              {hata}
+              {error}
             </p>
           )}
 
-          <Button type="submit" fullWidth disabled={yukleniyor}>
-            {yukleniyor ? 'Kontrol ediliyor...' : girisYapildi ? 'Giriş' : 'Kontrol Et'}
+          <Button type="submit" fullWidth disabled={loading || refreshing}>
+            {loading ? 'Kontrol ediliyor...' : passwordVerified ? 'Giriş' : 'Kontrol Et'}
           </Button>
         </form>
       </div>

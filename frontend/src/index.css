@@ -1,12 +1,12 @@
 @import "tailwindcss";
 
 /*
-  İsdemir tema renkleri.
-  Buradaki degerleri degistirince tum proje (butonlar, basliklar, arka planlar)
-  otomatik olarak yeni renge gecer. Kullanim: bg-brand-700, text-brand-700 vb.
+  Isdemir theme colors.
+  Changing the values here switches the whole project (buttons, headings, backgrounds)
+  to the new color automatically. Usage: bg-brand-700, text-brand-700 etc.
 */
 @theme {
-  /* Marka kirmizisi (ana renk) */
+  /* Brand red (main color) */
   --color-brand-50: #fef2f2;
   --color-brand-100: #fee2e2;
   --color-brand-200: #fecaca;
@@ -14,11 +14,11 @@
   --color-brand-400: #f87171;
   --color-brand-500: #ef4444;
   --color-brand-600: #dc2626;
-  --color-brand-700: #b91c1c; /* ana ton */
-  --color-brand-800: #991b1b; /* hover tonu */
+  --color-brand-700: #b91c1c; /* main tone */
+  --color-brand-800: #991b1b; /* hover tone */
   --color-brand-900: #7f1d1d;
 
-  /* Renkler icin kisa yol degiskenleri (istersen tema disinda da kullanabilirsin) */
+  /* Shortcut variables for the colors (usable outside the theme as well) */
   --color-brand: var(--color-brand-700);
   --color-brand-hover: var(--color-brand-800);
 }
