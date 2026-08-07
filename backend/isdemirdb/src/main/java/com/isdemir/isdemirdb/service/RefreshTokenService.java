@@ -4,7 +4,9 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.isdemir.isdemirdb.entity.RefreshToken;
 import com.isdemir.isdemirdb.exception.InvalidCredentialsException;
@@ -12,12 +14,14 @@ import com.isdemir.isdemirdb.repository.RefreshTokenRepository;
 import com.isdemir.isdemirdb.security.JwtProperties;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 // The life cycle of the refresh token lives in this layer. Unlike the access token, the
 // refresh token is NOT a JWT; it is an opaque (random UUID) value stored in the DB. That is
 // what makes it revocable on logout (stage 9) by setting aktif=false.
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class RefreshTokenService {
 
     private final RefreshTokenRepository refreshTokenRepository;
@@ -44,15 +48,17 @@ public class RefreshTokenService {
     public RefreshToken validateAndGet(String token) {
         RefreshToken refreshToken = refreshTokenRepository.findByToken(token)
                 .orElseThrow(() -> new InvalidCredentialsException("Refresh token bulunamadı."));
+                
+        if (refreshToken.getExpiresAt() != null
+                && refreshToken.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new InvalidCredentialsException("Refresh token süresi dolmuş.");
+        }
 
         if (refreshToken.getActive() == null || !refreshToken.getActive()) {
             throw new InvalidCredentialsException("Refresh token aktif değil.");
         }
 
-        if (refreshToken.getExpiresAt() != null
-                && refreshToken.getExpiresAt().isBefore(LocalDateTime.now())) {
-            throw new InvalidCredentialsException("Refresh token süresi dolmuş.");
-        }
+
 
         return refreshToken;
     }
@@ -65,5 +71,15 @@ public class RefreshTokenService {
 
         refreshToken.setActive(false);
         refreshTokenRepository.save(refreshToken);
+    }
+
+    // Periyodik temizlik: suresi dolmus refresh tokenlar DB'de durmasin diye silinir.
+    // Araligi application.properties -> jwt.cleanup-cron ile degistirilebilir
+    // (varsayilan: her gece 03:00).
+    @Scheduled(cron = "${jwt.cleanup-cron:0 0 3 * * *}")
+    @Transactional
+    public void deleteExpiredTokens() {
+        long deleted = refreshTokenRepository.deleteByExpiresAtBefore(LocalDateTime.now());
+        log.info("Suresi dolmus refresh token temizligi: {} kayit silindi", deleted);
     }
 }

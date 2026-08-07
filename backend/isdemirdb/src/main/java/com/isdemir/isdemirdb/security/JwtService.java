@@ -16,11 +16,13 @@ import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 // Stage 5: producing the JWT access token.
 // Stage 6: validating a token (signature + expiry) and reading its content (subject, roles).
 // The token carries the user (subject = kullanici_adi) and the roles; it is signed with HS256.
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class JwtService {
 
@@ -48,6 +50,9 @@ public class JwtService {
             parseClaims(token);
             return true;
         } catch (JwtException | IllegalArgumentException e) {
+            // Without this the reason (expired / wrong signature / malformed) is swallowed
+            // and the request just turns into a silent 401.
+            log.debug("Token gecersiz: {} - {}", e.getClass().getSimpleName(), e.getMessage());
             return false;
         }
     }

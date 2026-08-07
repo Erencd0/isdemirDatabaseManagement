@@ -1,519 +1,290 @@
-# JWT Authentication Roadmap
+# Gantt Chart Timeline Feature Roadmap
 
-## Amaç
+## Goal
 
-Projeye JWT tabanlı giriş sistemi eklemek.
+Implement a dedicated Gantt Chart page that allows users to visualize casting operations on a timeline.
 
-Giriş yapan kullanıcılar **Access Token** ve **Refresh Token** alacak.
+Each casting should be displayed according to its production duration, allowing users to quickly identify:
 
-Sadece giriş yapan kullanıcılar döküm ve malzeme işlemlerini gerçekleştirebilecek.
+- Which converter was used
+- When the casting started
+- When the casting finished
+- The overall production timeline
 
-> **Not:**
-> Bu proje staj projesi olduğu için ilk aşamada şifreler hashlenmeyecek.
-> Gerekirse daha sonra BCrypt eklenebilir.
-
----
-
-# Aşama 1 - Kullanıcı Yapısını Kontrol Et YAPILDI
-
-`kullanici` tablosunda aşağıdaki alanlar bulunmalı.
-
-```
-kullanici_id
-kullanici_adi
-kullanici_parola
-rol_adi
-```
-
-Bu aşamada amaç:
-
-- Kullanıcı oluşturabilmek
-- Login için kullanıcıyı veritabanından okuyabilmek
-
-Henüz JWT kullanılmayacak.
+The timeline should provide a clear overview of converter utilization throughout the day.
 
 ---
 
-# Aşama 2 - Refresh Token Tablosunu Oluştur YAPILDI
+# Page Structure
 
-Yeni tablo:
+Create a new page for the Gantt Chart instead of placing it on the main dashboard.
 
-```
-refresh_tokens
-```
-
-Kolonlar:
+**Suggested Route**
 
 ```
-id
-kullanici_id
-token
-bitis_zamani
-olusturulma_zamani
-aktif
+/timeline
 ```
 
-İlişki:
+## Reason
 
-```
-refresh_tokens.kullanici_id
-            ↓
-kullanici.kullanici_id
-```
+A Gantt Chart requires significant horizontal space. Keeping it on a dedicated page provides:
 
-Foreign Key kullanılacak.
-
-Amaç:
-
-Bir kullanıcının Refresh Token bilgisini veritabanında saklayabilmek.
+- Better readability
+- Cleaner dashboard layout
+- Easier future expansion
+- Better responsiveness
+- Space for filters and additional timeline controls
 
 ---
 
-# Aşama 3 - Spring Security'yi Projeye Ekle YAPILDI
+# Timeline Layout
 
-Spring Security dependency'sini ekle.
+The page should contain three main sections.
 
-Henüz authentication yapılmayacak.
+## 1. Filter Panel
 
-`SecurityConfig` oluştur.
+Located at the top of the page.
 
-Bütün endpointler geçici olarak açık olsun.
+Initially support filtering by converter.
 
-```java
-permitAll()
-```
+Filters:
 
-Amaç:
+- All Converters
+- KV1
+- KV2
+- KV3
 
-Spring Security altyapısını hazırlamak.
+Changing the selected converter should immediately refresh the chart.
 
----
-
-# Aşama 4 - Login Endpointi YAPILDI
-
-Endpoint
-
-```
-POST /auth/login
-```
-
-Request
-
-```json
-{
-    "username": "eren",
-    "password": "123456"
-}
-```
-
-Bu aşamada yapılacaklar:
-
-- Kullanıcıyı bul
-- Şifreyi kontrol et
-- Başarılıysa girişe izin ver
-
-Henüz JWT oluşturulmayacak.
+The filter panel should be designed so additional filters can easily be added in the future (such as date range, steel grade, status, etc.).
 
 ---
 
-# Aşama 5 - Access Token Üret YAPILDI
+## 2. Gantt Timeline
 
-Login başarılıysa JWT Access Token oluştur.
+The chart should contain one row for each converter.
 
-Response
+Example:
 
-```json
-{
-    "accessToken": "..."
-}
+```
+Time -------------------------------------------------------------->
+
+KV1 | ███████████████████
+KV2 |        █████████████████
+KV3 |                  ███████████
 ```
 
-Henüz Refresh Token kullanılmayacak.
-
-Amaç:
-
-JWT üretme mantığını öğrenmek.
+Each casting must appear only on the row of its assigned converter.
 
 ---
 
-# Aşama 6 - JWT Filter Yaz YAPILDI
+## 3. Legend
 
-Her istek aşağıdaki Authorization Header ile gelecek.
+A small legend should explain:
 
-```
-Authorization
+- Converter colors
+- Milestone indicators
 
-Bearer <access_token>
-```
-
-> Bu token **Postman içerisinde Authorization → Bearer Token alanına manuel olarak yapıştırılacaktır.**
-> Otomatik token ekleme veya otomatik yenileme yapılmayacaktır.
-
-JWT Filter işlemleri:
-
-↓
-
-Authorization Header'ı oku
-
-↓
-
-Token doğrula
-
-↓
-
-Kullanıcıyı belirle
-
-↓
-
-SecurityContext içerisine yerleştir
-
-Bu aşamadan sonra login olmadan korunan endpointlere erişilemeyecek.
+This helps users understand the chart quickly.
 
 ---
 
-# Aşama 7 - Refresh Token Sistemi YAPILDI
+# Timeline Duration
 
-Login başarılı olunca iki token oluştur.
+Each Gantt bar represents one casting.
+
+The duration of a bar is determined by:
+
+**Start**
+
+Scrap Charging Start Time
+
+**End**
+
+Casting Time
+
+Therefore,
 
 ```
-Access Token
-
-Refresh Token
+Bar Duration = Scrap Charging Start Time → Casting Time
 ```
 
-Refresh Token
-
-```
-refresh_tokens
-```
-
-tablosuna kaydedilecek.
-
-Response
-
-```json
-{
-    "accessToken": "...",
-    "refreshToken": "..."
-}
-```
+This represents the complete production interval for a casting.
 
 ---
 
-# Aşama 8 - Refresh Endpointi YAPILDI
+# Important Milestones
 
-Endpoint
+Each Gantt bar should contain two important process markers.
 
-```
-POST /auth/refresh
-```
+## Milestone 1
 
-Request
+Scrap Charging Start
 
-```json
-{
-    "refreshToken": "..."
-}
-```
+## Milestone 2
 
-İşleyiş
+Casting Time
 
-- Token DB'de var mı?
-- aktif = true mı?
-- Süresi dolmuş mu?
+These milestones should be represented by vertical indicator lines placed on the timeline bar.
 
-Hepsi doğruysa
-
-↓
-
-Yeni Access Token üret.
-
-↓
-
-Response olarak geri döndür.
-
-> Yeni Access Token yine Postman üzerinde eski Bearer Token silinerek manuel olarak eklenecektir.
-
----
- 
-# Aşama 9 - Logout YAPILDI
-
-Endpoint
+Example:
 
 ```
-POST /auth/logout
+████│────────────────────│████
+
+    ^                    ^
+
+ Scrap Start         Casting
 ```
 
-Logout olduğunda
-
-```
-aktif = false
-```
-
-yapılacak.
-
-Artık bu Refresh Token kullanılarak yeni Access Token üretilemeyecek.
+These markers make important production stages immediately visible.
 
 ---
 
-# Aşama 10 - Endpointleri Koru YAPILDI
+# Chart Data
 
-Örneğin
+Each timeline item should include at minimum:
 
-```
-POST /dokum
-```
+- Casting Number
+- Converter
+- Scrap Charging Start Time
+- Casting Time
+- Start Timestamp
+- End Timestamp
 
-Artık sadece giriş yapan kullanıcı kullanabilecek.
+The data structure should remain flexible for future additions.
 
-Login olmayan kullanıcı
+Possible future fields:
 
-```
-401 Unauthorized
-```
-
-alacak.
-
----
-
-# Test Senaryosu (Postman)
-
-## Kullanıcı Oluştur
-
-↓
-
-## Login
-
-↓
-
-Response
-
-```
-Access Token
-
-Refresh Token
-```
-
-↓
-
-Access Token'ı kopyala.
-
-↓
-
-Postman
-
-Authorization
-
-↓
-
-Bearer Token
-
-↓
-
-Access Token'ı manuel olarak yapıştır.
-
-↓
-
-Korunan endpointi çağır.
-
-```
-POST /dokum
-```
-
-↓
-
-```
-200 OK
-```
-
-↓
-
-Access Token'ın süresi dolsun.
-
-↓
-
-```
-POST /auth/refresh
-```
-
-↓
-
-Yeni Access Token dönsün.
-
-↓
-
-Postman'de eski Bearer Token'ı sil.
-
-↓
-
-Yeni Access Token'ı manuel olarak yapıştır.
-
-↓
-
-Tekrar
-
-```
-POST /dokum
-```
-
-↓
-
-```
-200 OK
-```
-
-↓
-
-Logout
-
-↓
-
-```
-POST /auth/logout
-```
-
-↓
-
-Aynı Refresh Token ile tekrar
-
-```
-POST /auth/refresh
-```
-
-↓
-
-```
-401 Unauthorized
-```
-
-veya
-
-```
-Refresh Token aktif değil.
-```
+- Heat Number
+- Steel Grade
+- Operator
+- Production Status
 
 ---
 
-# Paket Yapısı
+# Converter Colors
+
+Use a consistent color for each converter.
+
+Suggested mapping:
+
+- KV1 → Blue
+- KV2 → Green
+- KV3 → Orange
+
+Milestone indicators should use a dark color such as black or dark gray to remain clearly visible.
+
+---
+
+# Hover Information
+
+When the user hovers over a Gantt bar, display a tooltip containing:
+
+- Casting Number
+- Converter
+- Scrap Charging Start Time
+- Casting Time
+- Total Production Duration
+
+This information should appear without navigating away from the chart.
+
+---
+
+# Filtering Behavior
+
+The filter panel should initially support:
+
+- All Converters
+- KV1
+- KV2
+- KV3
+
+Example:
+
+All
 
 ```
-security
-│
-├── SecurityConfig
-├── JwtService
-├── JwtFilter
-├── JwtAuthenticationEntryPoint
-└── JwtProperties
-
-auth
-│
-├── AuthController
-├── AuthService
-├── LoginRequest
-├── LoginResponse
-└── RefreshRequest
-
-token
-│
-├── RefreshToken
-├── RefreshTokenRepository
-└── RefreshTokenService
-
-user
-│
-├── User
-├── UserRepository
-└── UserService
+KV1 ███████
+KV2 █████████████
+KV3 ██████
 ```
 
----
-
-# Claude Code ile Çalışma Sırası
-
-Her adımı ayrı prompt olarak yaptır.
-
-## Prompt 1
-
-Spring Security dependency ekle ve SecurityConfig oluştur.
-
-Şimdilik bütün endpointler `permitAll()` olsun.
-
----
-
-## Prompt 2
-
-JWT Service oluştur.
-
-Token üretebilsin ve doğrulayabilsin.
-
----
-
-## Prompt 3
-
-Login endpointini oluştur.
-
-Henüz sadece Access Token dönsün.
-
----
-
-## Prompt 4
-
-JWT Filter yaz.
-
-Authorization Bearer Token ile gelen isteği doğrulasın.
-
----
-
-## Prompt 5
-
-RefreshToken Entity, Repository ve Service katmanını oluştur.
-
----
-
-## Prompt 6
-
-Login sırasında Refresh Token üret ve veritabanına kaydet.
-
----
-
-## Prompt 7
-
-`/auth/refresh` endpointini yaz.
-
----
-
-## Prompt 8
-
-`/auth/logout` endpointini yaz.
-
----
-
-## Prompt 9
-
-Döküm ve malzeme endpointlerini authentication zorunlu olacak şekilde güncelle.
-
----
-
-# Hedef
-
-Proje sonunda aşağıdaki akış çalışıyor olmalı.
+KV1
 
 ```
-Login
-      ↓
-Access Token + Refresh Token
-      ↓
-(Postman'de Access Token manuel olarak Bearer Token alanına eklenir)
-      ↓
-Korunan Endpoint
-      ↓
-Access Token Süresi Doldu
-      ↓
-Refresh Endpoint
-      ↓
-Yeni Access Token
-      ↓
-(Postman'de eski Bearer Token silinir ve yenisi manuel eklenir)
-      ↓
-İşleme Devam
+KV1 ███████
 ```
+
+KV2
+
+```
+KV2 █████████████
+```
+
+KV3
+
+```
+KV3 ██████
+```
+
+The filtering logic should be implemented in a reusable way to simplify adding more filters later.
+
+---
+
+# UI Guidelines
+
+The page should follow the existing project design.
+
+Recommended layout:
+
+```
+-------------------------------------------------------
+                Casting Timeline
+-------------------------------------------------------
+
+[ Converter ▼ ]
+
+-------------------------------------------------------
+
+                 Gantt Chart
+
+-------------------------------------------------------
+
+Legend
+```
+
+The page should remain clean and easy to understand.
+
+Avoid excessive colors or unnecessary controls.
+
+---
+
+# Future Improvements
+
+The architecture should remain flexible so new features can be added without major refactoring.
+
+Possible future enhancements include:
+
+- Date range filtering
+- Search by Casting Number
+- Filter by Production Status
+- Filter by Steel Grade
+- Zoom In / Zoom Out
+- Horizontal scrolling
+- Daily / Weekly / Monthly timeline views
+- Real-time timeline updates
+- Export to PDF
+- Export to Excel
+- Responsive mobile layout
+- Clicking a bar to open detailed casting information
+
+---
+
+# Implementation Notes
+
+- Create the Gantt Chart as a separate page (`/timeline`).
+- Keep the filtering logic independent from the chart component.
+- Build reusable timeline components to support future enhancements.
+- Use a scalable architecture so additional converters or timeline events can be added easily.
+- Prioritize readability and maintainability over visual complexity.

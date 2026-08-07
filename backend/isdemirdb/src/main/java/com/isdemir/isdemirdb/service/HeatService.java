@@ -37,6 +37,16 @@ public class HeatService {
         return heatRepository.findByConverterNoIn(converterAccess.allowed());
     }
 
+    // Every heat of every converter, WITHOUT the kv1/kv2/kv3 filter. Only the timeline uses
+    // this: the whole point of that page is seeing how the three converters run against each
+    // other, so a kv1 user has to see KV2 and KV3 as well.
+    // It stays read only and still requires a valid token (SecurityConfig). The converter
+    // restriction remains on every other path: findAll() keeps filtering the list the user
+    // works with, and writes still go through converterAccess.require().
+    public List<Heat> findAllConverters() {
+        return heatRepository.findAll();
+    }
+
     // Creates a new heat. Breaking a time/order rule raises InvalidDataException (-> 400).
     public Heat create(Heat heat) {
         // A heat can only be opened on a converter the user holds the role for (-> 403).

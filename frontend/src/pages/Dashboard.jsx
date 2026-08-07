@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import Button from '../components/Button.jsx'
 import Modal from '../components/Modal.jsx'
 import { apiFetch, hasSession, logoutRequest, SessionError } from '../api/client.js'
+import { formatDate } from '../lib/format.js'
 
 // Every request here goes through apiFetch: it adds the access token as
 // "Authorization: Bearer ..." and on a 401 it throws SessionError and redirects to the login
@@ -63,20 +64,6 @@ const TIME_ORDER = [
   'anaUflemeBitisZamani',
   'dokumZamani',
 ]
-
-// Makes a datetime-local value readable ("2026-08-02T14:30" -> "02.08.2026 14:30")
-function formatDate(value) {
-  if (!value) return '-'
-  const d = new Date(value)
-  if (isNaN(d)) return value
-  return d.toLocaleString('tr-TR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
 
 function Dashboard() {
   const navigate = useNavigate()
@@ -480,6 +467,9 @@ function Dashboard() {
               <p className="font-semibold">{username}</p>
               <p className="text-sm text-brand-100">Rol: {selectedRole}</p>
             </div>
+            <Button variant="secondary" size="sm" onClick={() => navigate('/timeline')}>
+              Zaman Çizelgesi
+            </Button>
             <Button variant="secondary" size="sm" onClick={logout}>
               Çıkış Yap
             </Button>

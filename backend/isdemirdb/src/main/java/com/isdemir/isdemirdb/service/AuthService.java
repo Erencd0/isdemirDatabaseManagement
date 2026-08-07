@@ -18,9 +18,11 @@ import com.isdemir.isdemirdb.repository.UserRepository;
 import com.isdemir.isdemirdb.security.JwtService;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 // The whole login logic lives in this layer. The controller only calls this service.
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class AuthService {
 
@@ -29,6 +31,8 @@ public class AuthService {
     private final RefreshTokenService refreshTokenService;
 
     public LoginResponse login(LoginRequest request) {
+
+        log.info("Login denemesi: {}", request.getUsername());
 
         // Look for a username / password match -> 401 when there is none
         User user = userRepository
@@ -48,6 +52,8 @@ public class AuthService {
 
         // Stage 7: produce a refresh token and store it in the refresh_tokens table.
         RefreshToken refreshToken = refreshTokenService.create(user.getId());
+
+        log.info("Login basarili: {} (id={}, roller={})", user.getUsername(), user.getId(), roles);
 
         return new LoginResponse(
                 user.getId(),
@@ -71,12 +77,15 @@ public class AuthService {
         List<String> roles = parseRoles(user);
         String accessToken = jwtService.generateAccessToken(user, roles);
 
+        log.info("Yeni access token uretildi: {}", user.getUsername());
+
         return new RefreshResponse(accessToken);
     }
 
     // Stage 9: logout -> revoke the refresh token (aktif=false).
     public void logout(RefreshRequest request) {
         refreshTokenService.logout(request.getRefreshToken());
+        log.info("Logout: refresh token pasiflestirildi");
     }
 
     // Turns the rol_adi text ("kv1,kv3") into a role list. NULL/empty gives an empty list.

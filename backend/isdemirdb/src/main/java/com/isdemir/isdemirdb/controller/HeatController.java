@@ -44,6 +44,14 @@ public class HeatController {
         return heatService.create(heat);
     }
 
+    // Every heat of every converter, for the timeline page. Unlike /dokum it is NOT limited
+    // to the user's own converters; the timeline compares the three converters against each
+    // other. A valid token is still required. The literal path wins over /dokum/{id}.
+    @GetMapping("/dokum/zaman-cizelgesi")
+    public List<Heat> timeline() {
+        return heatService.findAllConverters();
+    }
+
     // Returns the next heat number this converter will get, before saving.
     // The frontend uses it to show a read-only number on the form.
     @GetMapping("/dokum/sonraki-no")

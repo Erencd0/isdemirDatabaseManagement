@@ -21,4 +21,47 @@
   /* Shortcut variables for the colors (usable outside the theme as well) */
   --color-brand: var(--color-brand-700);
   --color-brand-hover: var(--color-brand-800);
+
+  /*
+    The timeline board. Light surface, so the colour carries only the castings and the
+    structure is held by hairlines instead of by contrast.
+    These five drive the whole board - changing them here re-skins it.
+  */
+  --color-panel: #ffffff; /* the board itself */
+  --color-panel-raised: #fafbfc; /* the rail the converter names sit on */
+  --color-panel-line: #e6e9ee; /* hairline channel separators */
+  --color-panel-ink: #111827; /* readings, milestone markers */
+  --color-panel-muted: #6b7280; /* labels, hour marks, hover guides */
+
+  /*
+    One colour per converter, kept in the blue / green / orange the roadmap asks for but in
+    deeper steps than the primaries. Checked with the colour validator against the light
+    surface: lightness in band, chroma above the floor, worst colour blind pair 9.7 ΔE
+    (floor is 8), all three above 3:1 contrast.
+  */
+  --color-kv1: #4a90e2;
+  --color-kv2: #2fa277;
+  --color-kv3: #d07c22;
+
+  /* Page shell around the board - a cool steel neutral, not a plain gray */
+  --color-shell: #f4f6f8;
+  --color-hairline: #e2e6ec;
+}
+
+/*
+  Dimming the castings around the hovered one, in CSS rather than in React.
+  Done in JS it meant every bar on the board changed class on every hover, which on a
+  week's worth of castings is hundreds of style recalcs per mouse move.
+  :not(:active) keeps the board from lighting up while it is being dragged.
+*/
+.gantt:has(.gbar:hover):not(:active) .gbar {
+  opacity: 0.4;
+}
+.gantt .gbar:hover {
+  opacity: 1;
+}
+
+/* Times, temperatures and heat numbers line up in columns instead of dancing */
+.tnum {
+  font-variant-numeric: tabular-nums;
 }
