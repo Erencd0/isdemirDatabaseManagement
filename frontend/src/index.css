@@ -53,12 +53,12 @@
   Done in JS it meant every bar on the board changed class on every hover, which on a
   week's worth of castings is hundreds of style recalcs per mouse move.
   :not(:active) keeps the board from lighting up while it is being dragged.
+  The hovered bar is excluded here rather than lit back up by a second rule: :has() takes
+  the specificity of its argument, so a plain `.gbar:hover` rule loses to this one and the
+  bar under the cursor faded with the rest.
 */
-.gantt:has(.gbar:hover):not(:active) .gbar {
+.gantt:has(.gbar:hover):not(:active) .gbar:not(:hover) {
   opacity: 0.4;
-}
-.gantt .gbar:hover {
-  opacity: 1;
 }
 
 /* Times, temperatures and heat numbers line up in columns instead of dancing */
