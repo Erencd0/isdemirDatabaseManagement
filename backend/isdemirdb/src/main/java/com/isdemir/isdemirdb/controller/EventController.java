@@ -1,6 +1,5 @@
 package com.isdemir.isdemirdb.controller;
 
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,7 +18,6 @@ import lombok.RequiredArgsConstructor;
 // in HeatRecordService; exception -> ApiResponse mapping is done in GlobalExceptionHandler.
 @RestController
 @RequestMapping("/api")
-@CrossOrigin(origins = { "http://localhost:5173", "http://localhost:5174" })
 @RequiredArgsConstructor
 public class EventController {
 

@@ -10,6 +10,7 @@ import com.isdemir.isdemirdb.entity.User;
 @Repository
 public interface UserRepository extends JpaRepository<User, Integer> {
 
-    // Finds the row matching kullanici_adi and kullanici_parola
-    Optional<User> findByUsernameAndPassword(String username, String password);
+    // Finds the row by kullanici_adi. The password is compared with BCrypt in AuthService;
+    // it can no longer be matched with a WHERE clause because every hash carries its own salt.
+    Optional<User> findByUsername(String username);
 }

@@ -4,6 +4,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import com.isdemir.isdemirdb.dto.LoginRequest;
@@ -29,14 +30,18 @@ public class AuthService {
     private final UserRepository userRepository;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
+    private final PasswordEncoder passwordEncoder;
 
     public LoginResponse login(LoginRequest request) {
 
         log.info("Login denemesi: {}", request.getUsername());
 
-        // Look for a username / password match -> 401 when there is none
+        // Fetch the user by name, then compare the plain password against the stored BCrypt
+        // hash. Unknown user and wrong password give the exact same 401 on purpose, so the
+        // response does not reveal which usernames exist.
         User user = userRepository
-                .findByUsernameAndPassword(request.getUsername(), request.getPassword())
+                .findByUsername(request.getUsername())
+                .filter(u -> passwordEncoder.matches(request.getPassword(), u.getPassword()))
                 .orElseThrow(() -> new InvalidCredentialsException("Kullanıcı adı veya parola hatalı"));
 
         // There is a match but rol_adi is NULL/empty -> 403

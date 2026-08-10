@@ -8,7 +8,11 @@
 // Note: there is NO automatic (background) token refresh. On a 401 the user goes back to the
 // login page; the refresh happens there through /auth/refresh (see refreshAccessToken).
 
-const BASE_URL = 'http://localhost:8080'
+// Bos: istekler sayfanin kendi adresine gider ("/api/dokum" -> localhost:3000/api/dokum).
+// Oradan backend'e iletme isini dev'de Vite proxy'si, Docker'da nginx yapiyor
+// (vite.config.js ve frontend/nginx.conf). Adres sabit yazilmadigi icin uygulama
+// hangi makinede/portta acilirsa acilsin backend'i bulur, CORS da devreye girmez.
+const BASE_URL = ''
 
 // The localStorage keys live in one place so they cannot be mistyped.
 // The key strings stay as they are -- changing them would drop existing sessions.

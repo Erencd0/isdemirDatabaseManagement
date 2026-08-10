@@ -1,0 +1,61 @@
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: isdemir
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    # 5433 disarida: laptoptaki PostgreSQL 18 zaten 5432'yi kullaniyor, catismasin.
+    # Container icinde port yine 5432, backend oradan baglaniyor.
+    ports:
+      - "5433:5432"
+    volumes:
+      # Veritabani buraya yazar. Named volume: "docker compose down" veriyi SILMEZ,
+      # silmek icin "docker compose down -v" gerekir.
+      # PostgreSQL 18 imaji veriyi /var/lib/postgresql/<surum>/ altina koyuyor, bu yuzden
+      # mount bir ust dizine yapilir. Eski /var/lib/postgresql/data yolu 18'de hata veriyor.
+      - pgdata:/var/lib/postgresql
+      # Bu klasordeki .sql dosyalari SADECE pgdata bosken, yani ilk acilista calisir.
+      # Icinde laptoptaki isdemir veritabaninin tam kopyasi var (docker/dump-db.ps1 uretir).
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # -h 127.0.0.1 onemli: postgres imaji yukaridaki .sql dosyalarini calistirirken
+      # gecici olarak SADECE unix socket dinler. Host belirtmezsek pg_isready o gecici
+      # sunucuya baglanip "hazir" der ve backend veri yuklenmeden once ayaga kalkar.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    restart: unless-stopped
+
+  backend:
+    build: ./backend/isdemirdb
+    environment:
+      # "local" disinda herhangi bir profil: application-local.properties okunmaz,
+      # butun ayarlar asagidaki ortam degiskenlerinden gelir.
+      SPRING_PROFILES_ACTIVE: docker
+      # "db" = yukaridaki servisin adi; compose kendi agi icinde onu hostname yapiyor.
+      DB_URL: jdbc:postgresql://db:5432/isdemir
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+    # Postman'in dogrudan backend'e ulasabilmesi icin disari aciyoruz.
+    # Tarayici buna ihtiyac duymaz, o nginx uzerinden gidiyor.
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:

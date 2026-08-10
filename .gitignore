@@ -1,0 +1,5 @@
+.env
+
+# Veritabani dokumu: icinde parola hashleri ve gecerli refresh tokenlar var,
+# git'e girmemeli. Yeniden uretmek icin: .\docker\dump-db.ps1
+docker/initdb/*.sql

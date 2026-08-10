@@ -34,3 +34,8 @@ build/
 
 ### Log dosyalari ###
 logs/
+
+### Yerel ayarlar ve parolalar - asla commitlenmez ###
+### (.example dosyasi commitlenir, gercek dosya commitlenmez)
+application-local.properties
+.env

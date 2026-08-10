@@ -70,6 +70,22 @@
         <scope>runtime</scope>
     </dependency>
 
+    <!-- Flyway: semanin sahibi. src/main/resources/db/migration altindaki
+         V<n>__*.sql dosyalarini acilista sirayla calistirir.
+         DIKKAT: Spring Boot 4'te otomatik yapilandirma ayri modullere bolundu.
+         Sadece org.flywaydb:flyway-core eklemek YETMEZ - o durumda Flyway
+         classpath'te olur ama hic calismaz, sessizce. Auto-configuration
+         spring-boot-starter-flyway icinde geliyor. -->
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-flyway</artifactId>
+    </dependency>
+    <!-- PostgreSQL destegi Flyway 10'dan beri ayri bir bagimlilik. -->
+    <dependency>
+        <groupId>org.flywaydb</groupId>
+        <artifactId>flyway-database-postgresql</artifactId>
+    </dependency>
+
     <dependency>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-test</artifactId>
