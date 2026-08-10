@@ -14,7 +14,11 @@ param(
 $ErrorActionPreference = 'Stop'
 $out = Join-Path $PSScriptRoot 'initdb\01-isdemir.sql'
 
-if (-not $env:PGPASSWORD) { $env:PGPASSWORD = 'eren486' }
+if (-not $env:PGPASSWORD) {
+    $line = Select-String -Path (Join-Path $PSScriptRoot '..\.env') -Pattern '^DB_PASSWORD=' -ErrorAction SilentlyContinue
+    if ($line) { $env:PGPASSWORD = $line.Line.Split('=', 2)[1].Trim() }
+}
+if (-not $env:PGPASSWORD) { throw 'Parola yok: .env icinde DB_PASSWORD tanimlayin veya $env:PGPASSWORD ayarlayin.' }
 $env:PGCLIENTENCODING = 'UTF8'
 
 New-Item -ItemType Directory -Force (Split-Path $out) | Out-Null
