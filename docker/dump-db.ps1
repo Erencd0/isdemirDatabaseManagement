@@ -23,6 +23,7 @@ $env:PGCLIENTENCODING = 'UTF8'
 
 New-Item -ItemType Directory -Force (Split-Path $out) | Out-Null
 & (Join-Path $PgBin 'pg_dump.exe') -U $User -d $Database `
-    --no-owner --no-privileges --encoding=UTF8 -f $out
+    --no-owner --no-privileges --encoding=UTF8 `
+    --exclude-table-data=refresh_tokens -f $out
 
 "{0} yazildi ({1:N0} KB)" -f $out, ((Get-Item $out).Length / 1KB)

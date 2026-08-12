@@ -75,4 +75,11 @@ public class Heat {
     @Column(name = "kullanici_id")
     @JsonProperty("kullaniciId")
     private Integer userId;
+
+    // The operator (dokumcu) who ran this heat. Null on the heats recorded before operators
+    // existed. Only an aktif operator may be set on a new heat; an operator that later goes
+    // inactive stays on the old heats they ran.
+    @Column(name = "operator_id")
+    @JsonProperty("operatorId")
+    private Long operatorId;
 }

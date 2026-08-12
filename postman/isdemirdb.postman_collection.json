@@ -10,6 +10,8 @@
     { "key": "kullaniciParola", "value": "DEGISTIR_parola", "type": "string" },
     { "key": "kullaniciId", "value": "1", "type": "string" },
     { "key": "konverterNo", "value": "1", "type": "string" },
+    { "key": "operatorId", "value": "3", "type": "string" },
+    { "key": "pasifOperatorId", "value": "8", "type": "string" },
     { "key": "dokumId", "value": "", "type": "string" },
     { "key": "kullanimId", "value": "", "type": "string" }
   ],
@@ -200,10 +202,59 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"konverterNo\": {{konverterNo}},\n  \"hurdaSarjBaslamaZamani\": \"2026-08-04T08:00:00\",\n  \"hurdaSarjBitisZamani\": \"2026-08-04T08:10:00\",\n  \"anaUflemeyeBaslamaZamani\": \"2026-08-04T08:15:00\",\n  \"anaUflemeBitisZamani\": \"2026-08-04T08:35:00\",\n  \"dokumZamani\": \"2026-08-04T08:45:00\",\n  \"shdSicaklik\": 1620,\n  \"dokumSicaklik\": 1650,\n  \"lansSkalDurum\": \"NORMAL\",\n  \"kullaniciId\": {{kullaniciId}}\n}"
+              "raw": "{\n  \"konverterNo\": {{konverterNo}},\n  \"hurdaSarjBaslamaZamani\": \"2026-08-04T08:00:00\",\n  \"hurdaSarjBitisZamani\": \"2026-08-04T08:10:00\",\n  \"anaUflemeyeBaslamaZamani\": \"2026-08-04T08:15:00\",\n  \"anaUflemeBitisZamani\": \"2026-08-04T08:35:00\",\n  \"dokumZamani\": \"2026-08-04T08:45:00\",\n  \"shdSicaklik\": 1620,\n  \"dokumSicaklik\": 1650,\n  \"lansSkalDurum\": \"AZ_SKALLI\",\n  \"operatorId\": {{operatorId}},\n  \"kullaniciId\": {{kullaniciId}}\n}"
             },
             "url": { "raw": "{{baseUrl}}/dokum", "host": ["{{baseUrl}}"], "path": ["dokum"] },
             "description": "Otomasyonun gönderdiği geçerli döküm. Zamanlar kronolojik sırada: hurda şarj başla → bitiş → ana üflemeye başla → ana üfleme bitiş → döküm zamanı.\n\nNOT: Aynı konverterde daha geç zamanlı bir döküm zaten varsa backend 'önceki dökümün zamanlarından önce olamaz' (400) döndürebilir. O durumda buradaki tarihleri o dökümden sonraya çek."
+          }
+        },
+        {
+          "name": "GET Aktif Operatörler → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 döndü', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('dizi döndü', () => pm.expect(j).to.be.an('array'));",
+                  "pm.test('hepsi aktif', () => j.forEach((o) => pm.expect(o.aktif).to.eql(true)));",
+                  "console.log('Aktif operatör sayısı:', j.length);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/operator", "host": ["{{baseUrl}}"], "path": ["operator"] },
+            "description": "Döküm formundaki operatör combobox'ını dolduran liste. SADECE aktif (aktif = true) operatörler döner; işten ayrılmış bir operatör burada görünmez, dolayısıyla yeni bir döküme seçilemez."
+          }
+        },
+        {
+          "name": "POST Döküm - Pasif operatör → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 döndü', () => pm.response.to.have.status(400));",
+                  "console.log('Hata mesajı:', pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"konverterNo\": {{konverterNo}},\n  \"hurdaSarjBaslamaZamani\": \"2026-08-04T12:00:00\",\n  \"hurdaSarjBitisZamani\": \"2026-08-04T12:10:00\",\n  \"anaUflemeyeBaslamaZamani\": \"2026-08-04T12:15:00\",\n  \"anaUflemeBitisZamani\": \"2026-08-04T12:35:00\",\n  \"dokumZamani\": \"2026-08-04T12:45:00\",\n  \"shdSicaklik\": 1620,\n  \"dokumSicaklik\": 1650,\n  \"lansSkalDurum\": \"AZ_SKALLI\",\n  \"operatorId\": {{pasifOperatorId}},\n  \"kullaniciId\": {{kullaniciId}}\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/dokum", "host": ["{{baseUrl}}"], "path": ["dokum"] },
+            "description": "İşten ayrılmış (aktif = false) bir operatörle döküm açılamaz → 400 'Operatör aktif değil veya bulunamadı'. Aynı kural operatörsüz gönderimde de çalışır: operatorId hiç yoksa → 400 'Operatör seçilmelidir'. Yani frontend'i atlayıp doğrudan POST atmak kuralı deldirmez.\n\npasifOperatorId değişkeni Variables sekmesinde; DB'de aktif = false olan bir operatörün id'si olmalı."
           }
         },
         {
@@ -276,7 +327,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"konverterNo\": {{konverterNo}},\n  \"hurdaSarjBaslamaZamani\": \"2026-08-04T09:00:00\",\n  \"hurdaSarjBitisZamani\": \"2026-08-04T09:10:00\",\n  \"anaUflemeyeBaslamaZamani\": \"2026-08-04T09:15:00\",\n  \"anaUflemeBitisZamani\": \"2026-08-04T09:35:00\",\n  \"dokumZamani\": \"2026-08-04T09:05:00\",\n  \"shdSicaklik\": 1620,\n  \"dokumSicaklik\": 1650,\n  \"lansSkalDurum\": \"NORMAL\",\n  \"kullaniciId\": {{kullaniciId}}\n}"
+              "raw": "{\n  \"konverterNo\": {{konverterNo}},\n  \"hurdaSarjBaslamaZamani\": \"2026-08-04T09:00:00\",\n  \"hurdaSarjBitisZamani\": \"2026-08-04T09:10:00\",\n  \"anaUflemeyeBaslamaZamani\": \"2026-08-04T09:15:00\",\n  \"anaUflemeBitisZamani\": \"2026-08-04T09:35:00\",\n  \"dokumZamani\": \"2026-08-04T09:05:00\",\n  \"shdSicaklik\": 1620,\n  \"dokumSicaklik\": 1650,\n  \"lansSkalDurum\": \"AZ_SKALLI\",\n  \"operatorId\": {{operatorId}},\n  \"kullaniciId\": {{kullaniciId}}\n}"
             },
             "url": { "raw": "{{baseUrl}}/dokum", "host": ["{{baseUrl}}"], "path": ["dokum"] },
             "description": "dokumZamani, anaUflemeBitisZamani'ndan ÖNCE. Kronolojik sıra bozuk → 400 'Döküm Zamanı zamanı, Ana Üfleme Bitiş zamanından önce olamaz'."
@@ -304,7 +355,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"konverterNo\": {{konverterNo}},\n  \"hurdaSarjBaslamaZamani\": \"2026-08-04T10:00:00\",\n  \"hurdaSarjBitisZamani\": \"2026-08-04T09:50:00\",\n  \"anaUflemeyeBaslamaZamani\": \"2026-08-04T10:15:00\",\n  \"anaUflemeBitisZamani\": \"2026-08-04T10:35:00\",\n  \"dokumZamani\": \"2026-08-04T10:45:00\",\n  \"shdSicaklik\": 1620,\n  \"dokumSicaklik\": 1650,\n  \"lansSkalDurum\": \"NORMAL\",\n  \"kullaniciId\": {{kullaniciId}}\n}"
+              "raw": "{\n  \"konverterNo\": {{konverterNo}},\n  \"hurdaSarjBaslamaZamani\": \"2026-08-04T10:00:00\",\n  \"hurdaSarjBitisZamani\": \"2026-08-04T09:50:00\",\n  \"anaUflemeyeBaslamaZamani\": \"2026-08-04T10:15:00\",\n  \"anaUflemeBitisZamani\": \"2026-08-04T10:35:00\",\n  \"dokumZamani\": \"2026-08-04T10:45:00\",\n  \"shdSicaklik\": 1620,\n  \"dokumSicaklik\": 1650,\n  \"lansSkalDurum\": \"AZ_SKALLI\",\n  \"operatorId\": {{operatorId}},\n  \"kullaniciId\": {{kullaniciId}}\n}"
             },
             "url": { "raw": "{{baseUrl}}/dokum", "host": ["{{baseUrl}}"], "path": ["dokum"] },
             "description": "hurdaSarjBitisZamani, hurdaSarjBaslamaZamani'ndan ÖNCE → 400 'Hurda Şarj Bitiş zamanı, Hurda Şarj Başlama zamanından önce olamaz'."
@@ -332,7 +383,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"konverterNo\": {{konverterNo}},\n  \"hurdaSarjBaslamaZamani\": \"2000-01-01T00:00:00\",\n  \"hurdaSarjBitisZamani\": \"2000-01-01T00:10:00\",\n  \"anaUflemeyeBaslamaZamani\": \"2000-01-01T00:15:00\",\n  \"anaUflemeBitisZamani\": \"2000-01-01T00:35:00\",\n  \"dokumZamani\": \"2000-01-01T00:45:00\",\n  \"shdSicaklik\": 1620,\n  \"dokumSicaklik\": 1650,\n  \"lansSkalDurum\": \"NORMAL\",\n  \"kullaniciId\": {{kullaniciId}}\n}"
+              "raw": "{\n  \"konverterNo\": {{konverterNo}},\n  \"hurdaSarjBaslamaZamani\": \"2000-01-01T00:00:00\",\n  \"hurdaSarjBitisZamani\": \"2000-01-01T00:10:00\",\n  \"anaUflemeyeBaslamaZamani\": \"2000-01-01T00:15:00\",\n  \"anaUflemeBitisZamani\": \"2000-01-01T00:35:00\",\n  \"dokumZamani\": \"2000-01-01T00:45:00\",\n  \"shdSicaklik\": 1620,\n  \"dokumSicaklik\": 1650,\n  \"lansSkalDurum\": \"AZ_SKALLI\",\n  \"operatorId\": {{operatorId}},\n  \"kullaniciId\": {{kullaniciId}}\n}"
             },
             "url": { "raw": "{{baseUrl}}/dokum", "host": ["{{baseUrl}}"], "path": ["dokum"] },
             "description": "Zamanlar kendi içinde tutarlı ama çok eski (2000 yılı). Aynı konverterde daha yeni bir döküm varsa, yeni dökümün en erken zamanı öncekinin en geç zamanından önce olamaz → 400 'Bu dökümün zamanları, aynı konverterdeki önceki dökümün (No: ...) zamanlarından önce olamaz'.\n\nNOT: Bu senaryonun 400 dönmesi için o konverterde en az bir döküm daha bulunmalı (önce 'POST Döküm - Geçerli'yi çalıştır)."

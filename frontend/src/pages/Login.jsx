@@ -1,13 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Button from '../components/Button.jsx'
-import {
-  clearSession,
-  loginRequest,
-  refreshAccessToken,
-  saveSession,
-  wasSessionDropped,
-} from '../api/client.js'
+import { loginRequest, saveSession, wasSessionDropped } from '../api/client.js'
 
 function Login() {
   const navigate = useNavigate()
@@ -19,28 +13,15 @@ function Login() {
   const [user, setUser] = useState(null) // the successful login result
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [refreshing, setRefreshing] = useState(false) // a token refresh is being tried
 
   const passwordVerified = user !== null // password checked, waiting for a role
 
-  // When the access token expires a protected request gets a 401 and the user is sent here.
-  // In that case we first try to get a new access token from /auth/refresh, without asking
-  // for the password. On success we go straight back to the panel; when the refresh token is
-  // dead/revoked (logout) the normal login form is shown.
+  // An expired access token is renewed silently in client.js. We only land here when the
+  // refresh token is dead too (expired / logged out) -- then the password is needed again.
   useEffect(() => {
-    if (!wasSessionDropped()) return
-
-    setRefreshing(true)
-    refreshAccessToken().then((succeeded) => {
-      if (succeeded) {
-        navigate('/dashboard', { replace: true })
-        return
-      }
-      clearSession()
+    if (wasSessionDropped()) {
       setError('Oturumunuz sona erdi, lütfen tekrar giriş yapın')
-      setRefreshing(false)
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }
   }, [])
 
   const handleSubmit = async (e) => {
@@ -94,7 +75,7 @@ function Login() {
       <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8">
         <h1 className="text-3xl font-bold text-brand-700 text-center mb-1">İsdemir</h1>
         <p className="text-center text-gray-500 mb-6">
-          {refreshing ? 'Oturum yenileniyor...' : 'Giriş Yap'}
+          Giriş Yap
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -151,7 +132,7 @@ function Login() {
             </p>
           )}
 
-          <Button type="submit" fullWidth disabled={loading || refreshing}>
+          <Button type="submit" fullWidth disabled={loading}>
             {loading ? 'Kontrol ediliyor...' : passwordVerified ? 'Giriş' : 'Kontrol Et'}
           </Button>
         </form>

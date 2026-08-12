@@ -31,6 +31,7 @@ public class HeatService {
     private final MaterialUsageRepository materialUsageRepository;
     private final MaterialRepository materialRepository;
     private final ConverterAccess converterAccess;
+    private final OperatorService operatorService;
 
     // Lists the heats of the converters the logged in user is authorised for (kv1/kv2/kv3).
     public List<Heat> findAll() {
@@ -52,6 +53,9 @@ public class HeatService {
         // A heat can only be opened on a converter the user holds the role for (-> 403).
         // Checked first, so an unauthorised converter is not answered with a rule error.
         converterAccess.require(heat.getConverterNo());
+        // Who ran the heat has to be an operator that still works here (-> 400). This is the
+        // only gate: a POST from Postman passes through exactly the same check as the form.
+        operatorService.requireActive(heat.getOperatorId());
         // The time values must be in a sensible order among themselves; otherwise do not save.
         String timeError = validateTimes(heat);
         if (timeError != null) {
@@ -166,7 +170,8 @@ public class HeatService {
         }
         List<MaterialUsage> materials = materialUsageRepository.findByHeatId(heat.getId());
         fillMaterialNames(materials);
-        return new HeatDetailResponse(heat, materials);
+        return new HeatDetailResponse(heat, materials,
+                operatorService.findForHeat(heat.getOperatorId()));
     }
 
     // ---- Internal helpers ----

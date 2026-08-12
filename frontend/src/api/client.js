@@ -3,10 +3,9 @@
 // What it does:
 //  - Keeps the base URL and the JSON headers in one place
 //  - Adds the access token from localStorage to every request as "Authorization: Bearer ..."
-//  - On a 401 (missing / expired token) it drops the session and sends the user to /login
-//
-// Note: there is NO automatic (background) token refresh. On a 401 the user goes back to the
-// login page; the refresh happens there through /auth/refresh (see refreshAccessToken).
+//  - On a 401 it silently renews the access token through /auth/refresh and repeats the
+//    request; the user notices nothing. Only when the refresh token is dead/revoked does
+//    the session drop and the user go back to /login.
 
 // Bos: istekler sayfanin kendi adresine gider ("/api/dokum" -> localhost:3000/api/dokum).
 // Oradan backend'e iletme isini dev'de Vite proxy'si, Docker'da nginx yapiyor
@@ -57,10 +56,9 @@ export function wasSessionDropped() {
   return dropped
 }
 
-// On a 401: the access token is no longer valid and gets removed. The refresh token and the
-// user information STAY; the login page tries to renew the session with them.
+// Called only when the refresh has ALSO failed: the session is really over, everything goes.
 function dropSession() {
-  localStorage.removeItem(STORAGE_KEYS.accessToken)
+  clearSession()
   sessionStorage.setItem(SESSION_DROPPED, '1')
   // We are outside React Router here (this file is not a component), so the browser
   // performs the redirect.
@@ -84,16 +82,26 @@ export class SessionError extends Error {
 export async function apiFetch(path, options = {}) {
   const { body, headers, ...rest } = options
 
-  const requestHeaders = { ...headers }
-  const token = getAccessToken()
-  if (token) requestHeaders.Authorization = `Bearer ${token}`
-  if (body !== undefined) requestHeaders['Content-Type'] = 'application/json'
+  // Reads the token at call time, so the retry automatically uses the fresh one.
+  const send = () => {
+    const requestHeaders = { ...headers }
+    const token = getAccessToken()
+    if (token) requestHeaders.Authorization = `Bearer ${token}`
+    if (body !== undefined) requestHeaders['Content-Type'] = 'application/json'
 
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...rest,
-    headers: requestHeaders,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
+    return fetch(`${BASE_URL}${path}`, {
+      ...rest,
+      headers: requestHeaders,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+  }
+
+  let res = await send()
+
+  // Expired access token: renew it in the background and repeat the request once.
+  if (res.status === 401 && (await refreshAccessToken())) {
+    res = await send()
+  }
 
   if (res.status === 401) {
     dropSession()
@@ -114,9 +122,22 @@ export function loginRequest(username, password) {
 }
 
 // POST /auth/refresh - gets a new access token with the stored refresh token.
-// Used on the login page when we came back because of a 401.
 // Stores the new token and returns true on success, false otherwise.
-export async function refreshAccessToken() {
+//
+// Single flight: when several requests get a 401 at the same time they all wait for the SAME
+// refresh call instead of firing one each.
+let refreshInFlight = null
+
+export function refreshAccessToken() {
+  if (!refreshInFlight) {
+    refreshInFlight = doRefresh().finally(() => {
+      refreshInFlight = null
+    })
+  }
+  return refreshInFlight
+}
+
+async function doRefresh() {
   const refreshToken = getRefreshToken()
   if (!refreshToken) return false
 

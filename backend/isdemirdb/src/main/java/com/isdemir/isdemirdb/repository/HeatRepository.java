@@ -1,5 +1,6 @@
 package com.isdemir.isdemirdb.repository;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -23,6 +24,10 @@ public interface HeatRepository extends JpaRepository<Heat, Integer> {
 
     // In the event flow heatId = dokum_no; used to find the matching heat row.
     Optional<Heat> findByHeatNo(Integer heatNo);
+
+    // The heats of a date interval, by dokum_zamani (that is the moment a heat "happened").
+    // Used by the report; a heat without a tap time falls out of the interval by itself.
+    List<Heat> findByTapTimeBetweenOrderByTapTimeAsc(LocalDateTime from, LocalDateTime to);
 
     // Returns the current highest dokum_id (0 when the table is empty)
     @Query("SELECT COALESCE(MAX(h.id), 0) FROM Heat h")

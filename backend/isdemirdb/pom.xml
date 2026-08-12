@@ -97,6 +97,14 @@
     	<artifactId>lombok</artifactId>
     	<optional>true</optional>
 </dependency>
+
+    <!-- Apache POI: .xlsx uretimi (ReportController). Spring Boot BOM'u POI surumunu
+         yonetmiyor, surum burada sabit. -->
+    <dependency>
+        <groupId>org.apache.poi</groupId>
+        <artifactId>poi-ooxml</artifactId>
+        <version>5.4.1</version>
+    </dependency>
 	
 </dependencies>
 

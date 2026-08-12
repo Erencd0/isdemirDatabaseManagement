@@ -34,6 +34,9 @@ const HEAT_FIELDS = [
       { value: 'COK_SKALLI', label: 'ÇOK SKALLI' },
     ],
   },
+  // Last field: on the wide grid this lands bottom right, next to Lans Skal Durum. It has no
+  // fixed options - they are the active operators from /api/operator (see operatorOptions).
+  { name: 'operatorId', label: 'Operatör', type: 'select' },
 ]
 
 const EMPTY_FORM = HEAT_FIELDS.reduce((acc, f) => ({ ...acc, [f.name]: '' }), {})
@@ -90,6 +93,29 @@ function Dashboard() {
   // The dokum_no this user will get once saved (calculated by the backend, shown read only)
   const [nextNo, setNextNo] = useState(null)
 
+  // The operators that can be picked for a heat. The backend only sends the active ones, so
+  // a retired operator never shows up in the combobox.
+  const [operators, setOperators] = useState([])
+
+  // The operator of the heat on screen, as the detail sent it. It may be someone who has left
+  // (aktif false) - that is exactly the case the warning below is for.
+  const [heatOperator, setHeatOperator] = useState(null)
+  const operatorLeft = heatOperator?.aktif === false
+
+  const operatorOptions = operators.map((o) => ({
+    value: String(o.id),
+    label: `${o.operatorAdi} ${o.operatorSoyadi}`,
+  }))
+  // A retired operator is not in the list above, so an old heat would show an empty combobox.
+  // Put them in as an extra option, otherwise the screen would hide who ran that heat. The
+  // name stays plain - the warning under the field is what says they have left.
+  if (operatorLeft) {
+    operatorOptions.push({
+      value: String(heatOperator.id),
+      label: `${heatOperator.operatorAdi} ${heatOperator.operatorSoyadi}`,
+    })
+  }
+
   // The "list the heats" popup
   const [listOpen, setListOpen] = useState(false)
   const [heats, setHeats] = useState([])
@@ -112,6 +138,12 @@ function Dashboard() {
   // The row being edited (when set, the inline edit row is rendered)
   const [editingRow, setEditingRow] = useState(null)
 
+  // --- Rapor (the popover under the "Rapor Oluştur" button) ---
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportRange, setReportRange] = useState({ start: '', end: '' })
+  const [reportError, setReportError] = useState('')
+  const [reportBusy, setReportBusy] = useState(false)
+
   // Fetches the next dokum_no of this user from the backend
   const fetchNextNo = async () => {
     try {
@@ -122,9 +154,13 @@ function Dashboard() {
     }
   }
 
-  // Fetch the next dokum_no on mount
+  // Fetch the next dokum_no and the operator list on mount
   useEffect(() => {
     fetchNextNo()
+    apiFetch('/api/operator')
+      .then((res) => (res.ok ? res.json() : []))
+      .then(setOperators)
+      .catch(() => setOperators([])) // SessionError included: on a 401 we go to login anyway
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -158,6 +194,7 @@ function Dashboard() {
     setFormMessage(null)
     setErrors({})
     setSavedHeat(null)
+    setHeatOperator(null)
     // Reset the material section too: new heat, new material list
     setSelectedAdditive(null)
     setMaterialOptions([])
@@ -184,14 +221,52 @@ function Dashboard() {
     try {
       const res = await apiFetch(`/api/dokum/no/${nextNo}`)
       if (res.ok) {
-        const { dokum, malzemeler } = await res.json()
-        loadHeatIntoForm(dokum, malzemeler)
+        const { dokum, malzemeler, operator } = await res.json()
+        loadHeatIntoForm(dokum, malzemeler, operator)
       } else {
         setFormMessage({ type: 'error', text: `Döküm No: ${nextNo} için henüz kayıt yok.` })
       }
     } catch (e) {
       if (e instanceof SessionError) return
       setFormMessage({ type: 'error', text: 'Sunucuya bağlanılamadı' })
+    }
+  }
+
+  // Rapor: asks the backend for the .xlsx of the selected interval and lets the browser save
+  // it. The file cannot be fetched with a plain link because the endpoint needs the
+  // Authorization header, so it goes through apiFetch and is downloaded from a blob.
+  const createReport = async () => {
+    const { start, end } = reportRange
+    if (!start || !end) {
+      setReportError('Başlangıç ve bitiş tarihi seçin.')
+      return
+    }
+    if (end < start) {
+      setReportError('Bitiş tarihi başlangıçtan önce olamaz.')
+      return
+    }
+    setReportError('')
+    setReportBusy(true)
+    try {
+      const res = await apiFetch(`/api/rapor?baslangic=${start}&bitis=${end}`)
+      if (!res.ok) {
+        // The status is shown too: a 404 means the backend is not up to date, a 400 is a
+        // rule error whose message comes from the server.
+        setReportError((await res.text()) || `Rapor oluşturulamadı (${res.status})`)
+        return
+      }
+      const url = URL.createObjectURL(await res.blob())
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `rapor-${start}_${end}.xlsx`
+      link.click()
+      URL.revokeObjectURL(url)
+      setReportOpen(false)
+    } catch (e) {
+      if (e instanceof SessionError) return
+      setReportError('Sunucuya bağlanılamadı')
+    } finally {
+      setReportBusy(false)
     }
   }
 
@@ -408,7 +483,7 @@ function Dashboard() {
   // Fills a heat + its materials into the main form and the list below; puts the heat into
   // "saved" mode (form locked, No visible, open for adding materials). Shared by showDetail
   // and refresh.
-  const loadHeatIntoForm = (heat, materials) => {
+  const loadHeatIntoForm = (heat, materials, operator = null) => {
     // Fill the heat fields into the form. datetime-local expects "YYYY-MM-DDTHH:mm", so the
     // first 16 characters of the backend ISO string are enough. The rest becomes a string.
     const newForm = {}
@@ -429,6 +504,7 @@ function Dashboard() {
       text: `Döküm No: ${heat.dokumNo} yüklendi. Malzemeleri aşağıda görebilir, ekleme/düzenleme yapabilirsiniz.`,
     })
     setSavedHeat(heat)
+    setHeatOperator(operator)
 
     // Put the materials into the list below (the detail sends the type as "malzemeTuru",
     // the list expects "_type")
@@ -449,8 +525,8 @@ function Dashboard() {
     try {
       const res = await apiFetch(`/api/dokum/${id}`)
       if (!res.ok) return
-      const { dokum, malzemeler } = await res.json()
-      loadHeatIntoForm(dokum, malzemeler)
+      const { dokum, malzemeler, operator } = await res.json()
+      loadHeatIntoForm(dokum, malzemeler, operator)
     } catch {
       // ignore silently, the detail cannot be loaded
     }
@@ -487,6 +563,56 @@ function Dashboard() {
           <Button variant="outline" onClick={refresh} disabled={nextNo == null}>
             Yenile
           </Button>
+
+          {/* Rapor: pushed to the right end of the row (ml-auto), no new page, a small
+              popover hanging under the button */}
+          <div className="relative ml-auto">
+            <Button variant="outline" onClick={() => setReportOpen((o) => !o)}>
+              Rapor Oluştur
+            </Button>
+
+            {reportOpen && (
+              <>
+                {/* invisible layer: a click anywhere outside closes the popover */}
+                <div className="fixed inset-0 z-40" onClick={() => setReportOpen(false)} />
+                <div className="absolute right-0 top-full z-50 mt-2 w-72 rounded-2xl border border-gray-200 bg-white p-4 shadow-xl">
+                  <p className="mb-3 text-sm font-semibold text-brand-700">Tarih aralığı</p>
+
+                  <label className="mb-2 block text-xs font-medium text-gray-600">
+                    Başlangıç
+                    <input
+                      type="date"
+                      value={reportRange.start}
+                      max={reportRange.end || undefined}
+                      onChange={(e) =>
+                        setReportRange((r) => ({ ...r, start: e.target.value }))
+                      }
+                      className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:border-brand-500 focus:outline-none"
+                    />
+                  </label>
+
+                  <label className="mb-3 block text-xs font-medium text-gray-600">
+                    Bitiş
+                    <input
+                      type="date"
+                      value={reportRange.end}
+                      min={reportRange.start || undefined}
+                      onChange={(e) => setReportRange((r) => ({ ...r, end: e.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:border-brand-500 focus:outline-none"
+                    />
+                  </label>
+
+                  {reportError && (
+                    <p className="mb-2 text-xs font-medium text-red-600">{reportError}</p>
+                  )}
+
+                  <Button size="sm" fullWidth onClick={createReport} disabled={reportBusy}>
+                    {reportBusy ? 'Oluşturuluyor...' : 'İndir'}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         <section className="rounded-2xl bg-white p-6 shadow">
@@ -524,7 +650,7 @@ function Dashboard() {
                       }
                     >
                       <option value="">Seçiniz</option>
-                      {field.options.map((o) => (
+                      {(field.options ?? operatorOptions).map((o) => (
                         <option key={o.value} value={o.value}>
                           {o.label}
                         </option>
@@ -546,6 +672,13 @@ function Dashboard() {
                   )}
                   {errors[field.name] && (
                     <p className="mt-1 text-xs text-red-600">{errors[field.name]}</p>
+                  )}
+                  {/* The heat stays with the operator who ran it; when that person has left
+                      the company since, say so instead of silently showing their name. */}
+                  {field.name === 'operatorId' && operatorLeft && (
+                    <p className="mt-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-700">
+                      Bu operatör artık çalışmamaktadır
+                    </p>
                   )}
                 </div>
               ))}
