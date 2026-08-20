@@ -3,6 +3,8 @@ package com.isdemir.isdemirdb.controller;
 import java.util.List;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -13,11 +15,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.isdemir.isdemirdb.dto.HeatDetailResponse;
 import com.isdemir.isdemirdb.entity.Heat;
+import com.isdemir.isdemirdb.entity.HeatPhoto;
 import com.isdemir.isdemirdb.entity.MaterialUsage;
 import com.isdemir.isdemirdb.service.HeatService;
+import com.isdemir.isdemirdb.service.SupabaseStorage;
 
 import lombok.RequiredArgsConstructor;
 
@@ -29,6 +34,7 @@ import lombok.RequiredArgsConstructor;
 public class HeatController {
 
     private final HeatService heatService;
+    private final SupabaseStorage supabaseStorage;
 
     // Lists every heat
     @GetMapping("/dokum")
@@ -83,6 +89,36 @@ public class HeatController {
     @GetMapping("/dokum/{id}")
     public HeatDetailResponse detail(@PathVariable Integer id) {
         return heatService.detail(id);
+    }
+
+    // Adds a photo to a heat from the panel. multipart/form-data: "dosya" is the file itself,
+    // "kullaniciId" is who uploaded it (the same field the material endpoints take).
+    // Answers with the saved row, so the screen can show it without reloading the detail.
+    @PostMapping("/dokum/{id}/fotograf")
+    public HeatPhoto uploadPhoto(@PathVariable Integer id,
+            @RequestParam("dosya") MultipartFile dosya,
+            @RequestParam(value = "kullaniciId", required = false) Long kullaniciId) {
+        return heatService.addPhoto(id, dosya, kullaniciId);
+    }
+
+    // One photo of a heat, as the image itself. The metadata (id, name, type) already comes
+    // with the detail above; this endpoint only serves the bytes, pulled from the private
+    // Supabase Storage bucket. It needs a token like every other /api path, so the photos
+    // stay behind the login even though the frontend shows them in an <img>.
+    @GetMapping("/dokum/{id}/fotograf/{fotografId}")
+    public ResponseEntity<byte[]> photo(@PathVariable Integer id, @PathVariable Long fotografId) {
+        HeatPhoto photo = heatService.requirePhoto(id, fotografId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(photo.getContentType()))
+                .body(supabaseStorage.download(photo.getStoragePath()));
+    }
+
+    // Deletes a photo of a heat: the row and the file in the bucket both go, so it cannot be
+    // undone - the frontend asks before calling this.
+    @DeleteMapping("/dokum/{id}/fotograf/{fotografId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deletePhoto(@PathVariable Integer id, @PathVariable Long fotografId) {
+        heatService.deletePhoto(id, fotografId);
     }
 
     // The same detail, but by dokum_no. The "Yenile" button of the frontend uses this (see

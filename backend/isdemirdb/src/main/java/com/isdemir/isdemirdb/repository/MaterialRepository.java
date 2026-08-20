@@ -1,6 +1,7 @@
 package com.isdemir.isdemirdb.repository;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -20,11 +21,11 @@ public interface MaterialRepository extends JpaRepository<Material, Integer> {
     // Returns the active materials of one type
     List<Material> findByTypeAndActiveTrue(String type);
 
-    // Returns the materials of the given codes (code -> name mapping for "detay gor")
-    List<Material> findByCodeIn(List<Integer> codes);
+    // The material behind a malzeme_kodu the client sent (code -> malzeme_id on write).
+    Optional<Material> findByCode(Integer code);
 
-    // Checks whether a material code belongs to an ACTIVE material of the given additive
-    // (malzeme_turu). Used by the bulk insert to validate "this code is not in that
-    // additive" (e.g. code=12 & type=POTAKATKI returns false when there is no match).
-    boolean existsByCodeAndTypeAndActiveTrue(Integer code, String type);
+    // The ACTIVE material with this code inside this additive (malzeme_turu), empty when
+    // the code does not belong to that additive (e.g. code=12 & type=POTAKATKI). The bulk
+    // insert both validates with it and takes the malzeme_id it needs to write.
+    Optional<Material> findByCodeAndTypeAndActiveTrue(Integer code, String type);
 }

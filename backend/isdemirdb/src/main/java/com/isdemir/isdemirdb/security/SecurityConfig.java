@@ -31,12 +31,27 @@ public class SecurityConfig {
     private final JwtFilter jwtFilter;
     private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
 
-    // Passwords are stored as BCrypt hashes in kullanici.kullanici_parola.
     // BCrypt generates its own random salt and embeds it in the hash, so the same password
     // produces a different string every time -> the hash cannot be looked up with a WHERE clause.
+    // New passwords are always hashed. Matching also accepts a plain text one, because the
+    // Supabase database is shared with the mobile app and that app stores them plain (see
+    // PasswordHashInitializer, which is off on that profile).
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+        BCryptPasswordEncoder bcrypt = new BCryptPasswordEncoder();
+        return new PasswordEncoder() {
+            @Override
+            public String encode(CharSequence rawPassword) {
+                return bcrypt.encode(rawPassword);
+            }
+
+            @Override
+            public boolean matches(CharSequence rawPassword, String storedPassword) {
+                return PasswordHashInitializer.isHashed(storedPassword)
+                        ? bcrypt.matches(rawPassword, storedPassword)
+                        : storedPassword != null && storedPassword.contentEquals(rawPassword);
+            }
+        };
     }
 
     // Tek CORS ayari. Daha once her controller'da ayri @CrossOrigin listesi vardi; yeni bir

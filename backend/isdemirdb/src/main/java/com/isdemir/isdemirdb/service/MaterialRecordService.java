@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import com.isdemir.isdemirdb.dto.MaterialRequest;
 import com.isdemir.isdemirdb.dto.MaterialResponse;
 import com.isdemir.isdemirdb.entity.Heat;
+import com.isdemir.isdemirdb.entity.Material;
 import com.isdemir.isdemirdb.entity.MaterialUsage;
 import com.isdemir.isdemirdb.repository.HeatRepository;
 import com.isdemir.isdemirdb.repository.MaterialRepository;
@@ -63,9 +64,11 @@ public class MaterialRecordService {
         }
 
         // Does materialCode exist as ACTIVE inside this additive (type)? Otherwise reject it.
-        boolean codeMatchesAdditive = materialRepository
-                .existsByCodeAndTypeAndActiveTrue(request.getMaterialCode(), request.getAdditive());
-        if (!codeMatchesAdditive) {
+        // The same lookup hands back the malzeme_id the usage row is written with.
+        Material material = materialRepository
+                .findByCodeAndTypeAndActiveTrue(request.getMaterialCode(), request.getAdditive())
+                .orElse(null);
+        if (material == null) {
             return result(heatId, request, false, request.getMaterialCode() + " kodlu malzeme '"
                     + request.getAdditive() + "' katkısına ait değil.", null);
         }
@@ -79,8 +82,8 @@ public class MaterialRecordService {
 
         MaterialUsage usage = new MaterialUsage();
         usage.setHeatId(heat.getId());
-        usage.setMaterialCode(request.getMaterialCode());
-        usage.setQuantity(request.getQuantity());
+        usage.setMaterialId(material.getId());
+        usage.setQuantity(request.getQuantity().doubleValue());
         usage.setDeliveredAt(request.getAddedTime());
         usage.setUserId(request.getUserId());
         MaterialUsage saved = materialUsageRepository.save(usage);

@@ -39,3 +39,4 @@ logs/
 ### (.example dosyasi commitlenir, gercek dosya commitlenmez)
 application-local.properties
 .env
+application-supabase.properties

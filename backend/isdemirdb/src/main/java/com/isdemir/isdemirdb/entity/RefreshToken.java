@@ -16,7 +16,7 @@ import lombok.Setter;
 // Holds a user's refresh token (an opaque UUID) and its validity information.
 // FK: kullanici_id -> kullanici.kullanici_id
 @Entity
-@Table(name = "refresh_tokens")
+@Table(name = "refresh_token_tablosu")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -24,13 +24,13 @@ public class RefreshToken {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id")
+    @Column(name = "refresh_id")
     private Long id;
 
     @Column(name = "kullanici_id")
     private Integer userId;
 
-    @Column(name = "token", unique = true)
+    @Column(name = "refresh_token", unique = true)
     private String token;
 
     @Column(name = "bitis_zamani")
@@ -39,6 +39,6 @@ public class RefreshToken {
     @Column(name = "olusturulma_zamani")
     private LocalDateTime createdAt;
 
-    @Column(name = "aktif")
+    @Column(name = "aktif_pasif")
     private Boolean active;
 }

@@ -12,7 +12,7 @@ import lombok.Setter;
 
 // Maps the kullanici table. Never serialized to JSON directly (see LoginResponse).
 @Entity
-@Table(name = "kullanici")
+@Table(name = "\"Kullanici\"")   // buyuk harf -> tirnakli
 @Getter
 @Setter
 @NoArgsConstructor
@@ -20,16 +20,16 @@ public class User {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "kullanici_id")
+    @Column(name = "id")
     private Integer id;
 
     @Column(name = "kullanici_adi", unique = true)
     private String username;
 
-    @Column(name = "kullanici_parola")
+    @Column(name = "parola")
     private String password;
 
     // Comma separated role list, e.g. "kv1,kv3" (see AuthService.parseRoles)
-    @Column(name = "rol_adi")
+    @Column(name = "rol")
     private String roleName;
 }

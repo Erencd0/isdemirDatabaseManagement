@@ -18,7 +18,7 @@ import lombok.Setter;
 // aktif = the operator still works here. Only aktif operators can be picked for a new heat;
 // an inactive one stays on the heats they ran in the past.
 @Entity
-@Table(name = "operator_tablosu")
+@Table(name = "operator")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -26,7 +26,7 @@ public class Operator {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id")
+    @Column(name = "operator_id")
     private Long id;
 
     @Column(name = "operator_adi")
@@ -42,7 +42,7 @@ public class Operator {
     @JsonProperty("operatorRolu")
     private String role;
 
-    @Column(name = "aktif")
+    @Column(name = "akif_pasif")   // DB tarafinda yazim hatali
     @JsonProperty("aktif")
     private Boolean active;
 }

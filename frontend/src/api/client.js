@@ -78,21 +78,24 @@ export class SessionError extends Error {
 
 // The only way to call the protected endpoints.
 //  path   : e.g. "/api/dokum" (BASE_URL is prepended)
-//  options: fetch options; `body` is given as a PLAIN OBJECT and turned into JSON here
+//  options: fetch options; `body` is given as a PLAIN OBJECT and turned into JSON here.
+//           A FormData body (photo upload) is passed through untouched - the browser has to
+//           set its own multipart Content-Type with the boundary, so we must not set one.
 export async function apiFetch(path, options = {}) {
   const { body, headers, ...rest } = options
+  const isFormData = body instanceof FormData
 
   // Reads the token at call time, so the retry automatically uses the fresh one.
   const send = () => {
     const requestHeaders = { ...headers }
     const token = getAccessToken()
     if (token) requestHeaders.Authorization = `Bearer ${token}`
-    if (body !== undefined) requestHeaders['Content-Type'] = 'application/json'
+    if (body !== undefined && !isFormData) requestHeaders['Content-Type'] = 'application/json'
 
     return fetch(`${BASE_URL}${path}`, {
       ...rest,
       headers: requestHeaders,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
     })
   }
 

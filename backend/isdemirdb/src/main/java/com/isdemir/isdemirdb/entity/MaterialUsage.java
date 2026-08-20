@@ -2,6 +2,7 @@ package com.isdemir.isdemirdb.entity;
 
 import java.time.LocalDateTime;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import jakarta.persistence.Column;
@@ -18,7 +19,7 @@ import lombok.Setter;
 // Maps the malzeme_kullanim_alani table: one material added to one heat.
 // @JsonProperty keeps the JSON field names unchanged.
 @Entity
-@Table(name = "malzeme_kullanim_alani")
+@Table(name = "malzeme_kullanim")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -28,7 +29,7 @@ public class MaterialUsage {
     // hand; the IDENTITY strategy leaves it to the DB.
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "kullanim_id")
+    @Column(name = "malzeme_kullanim_id")
     @JsonProperty("kullanimId")
     private Integer id;
 
@@ -38,13 +39,15 @@ public class MaterialUsage {
     @JsonProperty("dokumId")
     private Integer heatId;
 
-    @Column(name = "malzeme_kodu")
-    @JsonProperty("malzemeKodu")
-    private Integer materialCode;
+    // FK to Material.id (malzeme_id) -- NOT the material code. The malzemeKodu the client
+    // sends is translated into this id on write (HeatService.requireMaterialId).
+    @Column(name = "malzeme_id")
+    @JsonIgnore
+    private Integer materialId;
 
     @Column(name = "miktar")
     @JsonProperty("miktar")
-    private Integer quantity;
+    private Double quantity;   // miktar DB'de double precision
 
     @Column(name = "malzeme_verilis_tarihi")
     @JsonProperty("malzemeVerilisTarihi")
@@ -60,7 +63,12 @@ public class MaterialUsage {
     @JsonProperty("islemZamani")
     private LocalDateTime processedAt;
 
-    // Not a DB column; filled from malzeme_kodu on "detay gor" (view detail).
+    // Not a DB column; the malzeme_kodu of malzeme_id, filled on "detay gor" (view detail).
+    @Transient
+    @JsonProperty("malzemeKodu")
+    private Integer materialCode;
+
+    // Not a DB column; filled from malzeme_id on "detay gor" (view detail).
     @Transient
     @JsonProperty("malzemeAdi")
     private String materialName;

@@ -5,6 +5,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import com.isdemir.isdemirdb.dto.ApiResponse;
 
@@ -42,6 +43,15 @@ public class GlobalExceptionHandler {
     public ResponseEntity<String> handleInvalidData(InvalidDataException ex) {
         log.warn("400 Bad Request: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());
+    }
+
+    // The upload limit (spring.servlet.multipart.max-file-size) is a rule too, not a crash:
+    // without this a too big photo would come back as a 500.
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<String> handleUploadTooLarge(MaxUploadSizeExceededException ex) {
+        log.warn("400 Bad Request (dosya cok buyuk): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body("Fotoğraf çok büyük (en fazla 15 MB)");
     }
 
     @ExceptionHandler(RecordNotFoundException.class)

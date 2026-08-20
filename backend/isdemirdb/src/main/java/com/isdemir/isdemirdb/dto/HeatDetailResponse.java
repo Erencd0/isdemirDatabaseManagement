@@ -4,6 +4,7 @@ import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.isdemir.isdemirdb.entity.Heat;
+import com.isdemir.isdemirdb.entity.HeatPhoto;
 import com.isdemir.isdemirdb.entity.MaterialUsage;
 import com.isdemir.isdemirdb.entity.Operator;
 
@@ -27,4 +28,10 @@ public class HeatDetailResponse {
     // this person does not work here any more.
     @JsonProperty("operator")
     private Operator operator;
+
+    // The photos of this heat (uploaded from the mobile app), metadata only - empty list when
+    // there are none. The image itself is downloaded from
+    // /api/dokum/{id}/fotograf/{fotografId}, so the list stays small.
+    @JsonProperty("fotograflar")
+    private List<HeatPhoto> photos;
 }

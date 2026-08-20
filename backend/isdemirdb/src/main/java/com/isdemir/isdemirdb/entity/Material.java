@@ -14,7 +14,7 @@ import lombok.Setter;
 
 // Maps the malzeme_tablosu table. @JsonProperty keeps the JSON field names unchanged.
 @Entity
-@Table(name = "malzeme_tablosu")
+@Table(name = "\"malzeme_Tanim\"")   // buyuk harf -> tirnakli
 @Getter
 @Setter
 @NoArgsConstructor

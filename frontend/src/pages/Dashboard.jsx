@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import Button from '../components/Button.jsx'
 import Modal from '../components/Modal.jsx'
 import { apiFetch, hasSession, logoutRequest, SessionError } from '../api/client.js'
 import { formatDate } from '../lib/format.js'
+import { shrinkImage } from '../lib/image.js'
 
 // Every request here goes through apiFetch: it adds the access token as
 // "Authorization: Bearer ..." and on a 401 it throws SessionError and redirects to the login
@@ -116,6 +117,10 @@ function Dashboard() {
     })
   }
 
+  // The photos of the heat on screen (metadata only: id, file name, type, size). They come
+  // with the detail response; the images themselves are downloaded one by one (see HeatPhotos).
+  const [photos, setPhotos] = useState([])
+
   // The "list the heats" popup
   const [listOpen, setListOpen] = useState(false)
   const [heats, setHeats] = useState([])
@@ -195,6 +200,7 @@ function Dashboard() {
     setErrors({})
     setSavedHeat(null)
     setHeatOperator(null)
+    setPhotos([])
     // Reset the material section too: new heat, new material list
     setSelectedAdditive(null)
     setMaterialOptions([])
@@ -221,8 +227,8 @@ function Dashboard() {
     try {
       const res = await apiFetch(`/api/dokum/no/${nextNo}`)
       if (res.ok) {
-        const { dokum, malzemeler, operator } = await res.json()
-        loadHeatIntoForm(dokum, malzemeler, operator)
+        const { dokum, malzemeler, operator, fotograflar } = await res.json()
+        loadHeatIntoForm(dokum, malzemeler, operator, fotograflar)
       } else {
         setFormMessage({ type: 'error', text: `Döküm No: ${nextNo} için henüz kayıt yok.` })
       }
@@ -483,7 +489,7 @@ function Dashboard() {
   // Fills a heat + its materials into the main form and the list below; puts the heat into
   // "saved" mode (form locked, No visible, open for adding materials). Shared by showDetail
   // and refresh.
-  const loadHeatIntoForm = (heat, materials, operator = null) => {
+  const loadHeatIntoForm = (heat, materials, operator = null, heatPhotos = []) => {
     // Fill the heat fields into the form. datetime-local expects "YYYY-MM-DDTHH:mm", so the
     // first 16 characters of the backend ISO string are enough. The rest becomes a string.
     const newForm = {}
@@ -505,6 +511,7 @@ function Dashboard() {
     })
     setSavedHeat(heat)
     setHeatOperator(operator)
+    setPhotos(heatPhotos ?? [])
 
     // Put the materials into the list below (the detail sends the type as "malzemeTuru",
     // the list expects "_type")
@@ -525,8 +532,8 @@ function Dashboard() {
     try {
       const res = await apiFetch(`/api/dokum/${id}`)
       if (!res.ok) return
-      const { dokum, malzemeler, operator } = await res.json()
-      loadHeatIntoForm(dokum, malzemeler, operator)
+      const { dokum, malzemeler, operator, fotograflar } = await res.json()
+      loadHeatIntoForm(dokum, malzemeler, operator, fotograflar)
     } catch {
       // ignore silently, the detail cannot be loaded
     }
@@ -703,6 +710,31 @@ function Dashboard() {
               </Button>
             </div>
           </form>
+        </section>
+
+        {/* The photos of the heat on screen. They are taken in the field and uploaded from
+            the mobile app; here they are only shown. */}
+        <section className="mt-6 rounded-2xl bg-white p-6 shadow">
+          <h2 className="mb-4 text-lg font-bold text-brand-700">
+            Döküm Fotoğrafları
+            {saved && <span className="ml-2 text-sm font-normal text-gray-400">({photos.length})</span>}
+          </h2>
+          {!saved ? (
+            <p className="text-sm text-gray-500">
+              Fotoğraf ekleyebilmek için önce dökümü kaydedin ya da "Dökümleri Listele" → "Detay
+              Gör" ile bir döküm yükleyin.
+            </p>
+          ) : (
+            <HeatPhotos
+              heatId={savedHeat.dokumId}
+              photos={photos}
+              userId={userId}
+              onUploaded={(photo) => setPhotos((current) => [...current, photo])}
+              onDeleted={(id) =>
+                setPhotos((current) => current.filter((p) => p.fotografId !== id))
+              }
+            />
+          )}
         </section>
 
         {/* STEPS 4-5-6: the material section (active once the heat is saved) */}
@@ -904,6 +936,332 @@ function Dashboard() {
         )}
       </Modal>
     </div>
+  )
+}
+
+// The photo gallery of one heat: the thumbnails, the upload tile and the full screen viewer.
+// The files live in a private bucket, so an <img src="..."> pointing at the storage would be
+// rejected - every photo is fetched through apiFetch (which adds the token) and shown from
+// the blob URL of the response.
+function HeatPhotos({ heatId, photos, userId, onUploaded, onDeleted }) {
+  const [urls, setUrls] = useState({}) // fotografId -> blob url
+  const [failed, setFailed] = useState({}) // fotografId -> true (download or render failed)
+  const [zoomed, setZoomed] = useState(null) // the photo shown full screen
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
+  const [deleting, setDeleting] = useState(null) // the fotografId being deleted
+  const objectUrls = useRef([])
+
+  // Downloads the images that are not in hand yet. Walking over the missing ones (instead of
+  // all of them) keeps a fresh upload from re-fetching the whole gallery.
+  useEffect(() => {
+    for (const photo of photos) {
+      if (urls[photo.fotografId] || failed[photo.fotografId]) continue
+      apiFetch(`/api/dokum/${heatId}/fotograf/${photo.fotografId}`)
+        .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(res.status))))
+        .then((blob) => {
+          const url = URL.createObjectURL(blob)
+          objectUrls.current.push(url)
+          setUrls((u) => ({ ...u, [photo.fotografId]: url }))
+        })
+        .catch(() => {
+          // SessionError included: on a 401 we are heading to login anyway
+          setFailed((f) => ({ ...f, [photo.fotografId]: true }))
+        })
+    }
+    // urls/failed are only read to skip the work already done; listing them as dependencies
+    // would restart the effect after every single download.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [heatId, photos])
+
+  // Another heat (or leaving the page): release the images of the previous one, otherwise
+  // every heat looked at would keep its photos in memory until a reload.
+  useEffect(() => {
+    return () => {
+      objectUrls.current.forEach(URL.revokeObjectURL)
+      objectUrls.current = []
+      setUrls({})
+      setFailed({})
+      setZoomed(null)
+    }
+  }, [heatId])
+
+  const zoomedIndex = photos.findIndex((p) => p.fotografId === zoomed?.fotografId)
+
+  // Moves to the next/previous photo in the viewer (wraps around at both ends)
+  const step = (direction) => {
+    if (photos.length < 2 || zoomedIndex < 0) return
+    setZoomed(photos[(zoomedIndex + direction + photos.length) % photos.length])
+  }
+
+  // Full screen viewer: Esc closes it, the arrows walk through the photos.
+  useEffect(() => {
+    if (!zoomed) return
+    const onKey = (e) => {
+      if (e.key === 'Escape') setZoomed(null)
+      if (e.key === 'ArrowRight') step(1)
+      if (e.key === 'ArrowLeft') step(-1)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  // The upload tile: sends the selected files one by one and drops each saved row into the
+  // list, so the new photo shows up without reloading the detail.
+  const upload = async (fileList) => {
+    const files = Array.from(fileList ?? [])
+    if (files.length === 0) return
+    setUploadError('')
+    setUploading(true)
+    try {
+      for (const file of files) {
+        const form = new FormData()
+        // Resized here, not on the server: a 5 MB phone photo would otherwise be uploaded in
+        // full only to be shown as a thumbnail.
+        form.append('dosya', await shrinkImage(file))
+        if (userId) form.append('kullaniciId', userId)
+        const res = await apiFetch(`/api/dokum/${heatId}/fotograf`, { method: 'POST', body: form })
+        if (!res.ok) {
+          // Show the backend message (400: not an image / too big); fall back to a generic one
+          const text = await res.text().catch(() => '')
+          setUploadError(text || `${file.name} yüklenemedi`)
+          break
+        }
+        onUploaded(await res.json())
+      }
+    } catch (e) {
+      if (e instanceof SessionError) return
+      setUploadError('Sunucuya bağlanılamadı')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  // Deleting a photo: the backend drops the row AND the file in the bucket, so there is no
+  // way back - hence the question first. The list is corrected by the parent (onDeleted).
+  const remove = async (photo) => {
+    if (!window.confirm(`"${photo.dosyaAdi}" silinsin mi? Bu işlem geri alınamaz.`)) return
+    setUploadError('')
+    setDeleting(photo.fotografId)
+    try {
+      const res = await apiFetch(`/api/dokum/${heatId}/fotograf/${photo.fotografId}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) {
+        setUploadError((await res.text().catch(() => '')) || 'Fotoğraf silinemedi')
+        return
+      }
+      // The image itself is in memory as a blob URL: without releasing it here it would stay
+      // there until another heat is opened.
+      const url = urls[photo.fotografId]
+      if (url) URL.revokeObjectURL(url)
+      setUrls((u) => {
+        const next = { ...u }
+        delete next[photo.fotografId]
+        return next
+      })
+      if (zoomed?.fotografId === photo.fotografId) setZoomed(null)
+      onDeleted(photo.fotografId)
+    } catch (e) {
+      if (e instanceof SessionError) return
+      setUploadError('Sunucuya bağlanılamadı')
+    } finally {
+      setDeleting(null)
+    }
+  }
+
+  const tile = 'relative aspect-square overflow-hidden rounded-xl'
+
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {/* Upload: a tile of its own, so it sits inside the gallery instead of above it */}
+        <label
+          className={
+            `${tile} flex cursor-pointer flex-col items-center justify-center gap-1 border-2 ` +
+            'border-dashed border-gray-300 text-gray-500 transition hover:border-brand-500 ' +
+            'hover:bg-brand-50 hover:text-brand-700 ' +
+            (uploading ? 'pointer-events-none opacity-60' : '')
+          }
+        >
+          <span className="text-3xl leading-none">+</span>
+          <span className="px-2 text-center text-xs font-medium">
+            {uploading ? 'Yükleniyor...' : 'Fotoğraf Ekle'}
+          </span>
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            disabled={uploading}
+            className="hidden"
+            onChange={(e) => {
+              upload(e.target.files)
+              e.target.value = '' // the same file can be picked again after a failed try
+            }}
+          />
+        </label>
+
+        {photos.map((photo) => (
+          <div
+            key={photo.fotografId}
+            className={`${tile} group bg-gray-100 ring-1 ring-gray-200 transition hover:ring-2 hover:ring-brand-500`}
+          >
+            <button
+              type="button"
+              onClick={() => urls[photo.fotografId] && setZoomed(photo)}
+              className="h-full w-full"
+            >
+              {failed[photo.fotografId] ? (
+                // A .heic from the phone reaches the browser fine but cannot be rendered by it
+                <span className="flex h-full items-center justify-center px-2 text-center text-xs text-gray-500">
+                  Görüntülenemiyor ({photo.icerikTuru})
+                </span>
+              ) : urls[photo.fotografId] ? (
+                <img
+                  src={urls[photo.fotografId]}
+                  alt={photo.dosyaAdi}
+                  onError={() => setFailed((f) => ({ ...f, [photo.fotografId]: true }))}
+                  className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                />
+              ) : (
+                <span className="block h-full w-full animate-pulse bg-gray-200" />
+              )}
+
+              {/* The name is written ON the photo: no caption line under the grid, so the tiles
+                  stay the same height however long the file names are. */}
+              <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-2 pb-1.5 pt-4 text-left">
+                <span className="block truncate text-[11px] font-medium text-white">
+                  {photo.dosyaAdi}
+                </span>
+                <span className="block text-[10px] text-white/70">
+                  {Math.round(photo.boyutBayt / 1024)} KB
+                </span>
+              </span>
+            </button>
+
+            {/* Delete: always visible, not only on hover - on a tablet there is no hover. */}
+            <button
+              type="button"
+              aria-label="Fotoğrafı sil"
+              title="Fotoğrafı sil"
+              disabled={deleting === photo.fotografId}
+              onClick={() => remove(photo)}
+              className={
+                'absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center ' +
+                'rounded-full bg-black/50 text-lg leading-none text-white transition ' +
+                'hover:bg-red-600 disabled:opacity-40'
+              }
+            >
+              &times;
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {uploadError && <p className="mt-3 text-sm text-red-600">{uploadError}</p>}
+      {photos.length === 0 && !uploading && (
+        <p className="mt-3 text-sm text-gray-500">
+          Bu döküme ait fotoğraf yok. Soldaki kutudan ekleyebilirsiniz.
+        </p>
+      )}
+
+      {/* Full screen viewer. Deliberately NOT the white Modal card: a photo inside a scrolling
+          box is unusable. Here the image is fitted to the screen (object-contain) on a dark
+          background - nothing scrolls. */}
+      {zoomed && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col bg-black/90"
+          onClick={() => setZoomed(null)}
+        >
+          <div className="flex items-center justify-between gap-4 px-5 py-3 text-white">
+            <p className="truncate text-sm">
+              <span className="font-medium">{zoomed.dosyaAdi}</span>
+              <span className="ml-2 text-white/60">
+                {zoomedIndex + 1}/{photos.length} · {formatDate(zoomed.yuklenmeZamani)}
+              </span>
+            </p>
+            <div className="flex shrink-0 items-center gap-4">
+              {/* Download: the image is already in hand as a blob URL, so the browser saves it
+                  straight from memory - no second request to the backend. stopPropagation:
+                  the click must not reach the dark background, which closes the viewer. */}
+              {urls[zoomed.fotografId] && (
+                <a
+                  href={urls[zoomed.fotografId]}
+                  download={zoomed.dosyaAdi}
+                  aria-label="Fotoğrafı indir"
+                  title="Fotoğrafı indir"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-white/70 transition hover:text-white"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-6 w-6"
+                  >
+                    <path d="M12 3v12" />
+                    <path d="m7 11 5 5 5-5" />
+                    <path d="M4 20h16" />
+                  </svg>
+                </a>
+              )}
+              <button
+                type="button"
+                aria-label="Kapat"
+                onClick={() => setZoomed(null)}
+                className="text-3xl leading-none text-white/70 transition hover:text-white"
+              >
+                &times;
+              </button>
+            </div>
+          </div>
+
+          <div className="flex min-h-0 flex-1 items-center justify-center gap-4 px-4 pb-6">
+            {photos.length > 1 && (
+              <ViewerArrow label="Önceki" onClick={() => step(-1)}>
+                &#8249;
+              </ViewerArrow>
+            )}
+            {urls[zoomed.fotografId] ? (
+              <img
+                src={urls[zoomed.fotografId]}
+                alt={zoomed.dosyaAdi}
+                onClick={(e) => e.stopPropagation()}
+                className="max-h-full max-w-full rounded-lg object-contain shadow-2xl"
+              />
+            ) : (
+              <p className="text-sm text-white/70">Yükleniyor...</p>
+            )}
+            {photos.length > 1 && (
+              <ViewerArrow label="Sonraki" onClick={() => step(1)}>
+                &#8250;
+              </ViewerArrow>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+// The two arrows of the viewer. stopPropagation: a click on the arrow must not reach the dark
+// background, which closes the viewer.
+function ViewerArrow({ label, onClick, children }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      className="shrink-0 rounded-full bg-white/10 px-4 py-2 text-3xl leading-none text-white/80 transition hover:bg-white/20 hover:text-white"
+    >
+      {children}
+    </button>
   )
 }
 

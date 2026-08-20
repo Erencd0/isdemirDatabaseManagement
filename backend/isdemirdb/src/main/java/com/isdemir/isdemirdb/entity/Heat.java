@@ -36,19 +36,19 @@ public class Heat {
     @JsonProperty("konverterNo")
     private Integer converterNo;
 
-    @Column(name = "hurda_sarj_baslama_zamani")
+    @Column(name = "hurda_sarj_baslama")
     @JsonProperty("hurdaSarjBaslamaZamani")
     private LocalDateTime scrapChargeStartTime;
 
-    @Column(name = "hurda_sarj_bitis_zamani")
+    @Column(name = "harda_sarj_bitis")
     @JsonProperty("hurdaSarjBitisZamani")
     private LocalDateTime scrapChargeEndTime;
 
-    @Column(name = "ana_uflemeye_baslama_zamani")
+    @Column(name = "ana_ufeleme_baslama")
     @JsonProperty("anaUflemeyeBaslamaZamani")
     private LocalDateTime mainBlowStartTime;
 
-    @Column(name = "ana_ufleme_bitis_zamani")
+    @Column(name = "ana_ufleme_bitis")
     @JsonProperty("anaUflemeBitisZamani")
     private LocalDateTime mainBlowEndTime;
 
@@ -58,11 +58,11 @@ public class Heat {
 
     @Column(name = "shd_sicaklik")
     @JsonProperty("shdSicaklik")
-    private Integer shdTemperature;
+    private Double shdTemperature;
 
     @Column(name = "dokum_sicaklik")
     @JsonProperty("dokumSicaklik")
-    private Integer tapTemperature;
+    private Double tapTemperature;
 
     @Column(name = "lans_skal_durum")
     @JsonProperty("lansSkalDurum")
@@ -72,14 +72,14 @@ public class Heat {
     @JsonProperty("kayitZamani")
     private LocalDateTime createdAt;
 
-    @Column(name = "kullanici_id")
+    @Column(name = "kullanci_id")
     @JsonProperty("kullaniciId")
     private Integer userId;
 
     // The operator (dokumcu) who ran this heat. Null on the heats recorded before operators
     // existed. Only an aktif operator may be set on a new heat; an operator that later goes
     // inactive stays on the old heats they ran.
-    @Column(name = "operator_id")
+    @Column(name = "oprator_id")
     @JsonProperty("operatorId")
     private Long operatorId;
 }

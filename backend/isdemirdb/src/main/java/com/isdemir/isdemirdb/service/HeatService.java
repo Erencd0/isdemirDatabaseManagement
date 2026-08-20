@@ -1,18 +1,23 @@
 package com.isdemir.isdemirdb.service;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.isdemir.isdemirdb.dto.HeatDetailResponse;
 import com.isdemir.isdemirdb.entity.Heat;
+import com.isdemir.isdemirdb.entity.HeatPhoto;
 import com.isdemir.isdemirdb.entity.Material;
 import com.isdemir.isdemirdb.entity.MaterialUsage;
 import com.isdemir.isdemirdb.exception.InvalidDataException;
 import com.isdemir.isdemirdb.exception.RecordNotFoundException;
+import com.isdemir.isdemirdb.repository.HeatPhotoRepository;
 import com.isdemir.isdemirdb.repository.HeatRepository;
 import com.isdemir.isdemirdb.repository.MaterialRepository;
 import com.isdemir.isdemirdb.repository.MaterialUsageRepository;
@@ -30,6 +35,8 @@ public class HeatService {
     private final HeatRepository heatRepository;
     private final MaterialUsageRepository materialUsageRepository;
     private final MaterialRepository materialRepository;
+    private final HeatPhotoRepository heatPhotoRepository;
+    private final SupabaseStorage supabaseStorage;
     private final ConverterAccess converterAccess;
     private final OperatorService operatorService;
 
@@ -109,6 +116,7 @@ public class HeatService {
             throw new InvalidDataException(timeError);
         }
         materialUsage.setHeatId(heatId);
+        materialUsage.setMaterialId(requireMaterialId(materialUsage.getMaterialCode()));
         return materialUsageRepository.save(materialUsage);
     }
 
@@ -125,7 +133,7 @@ public class HeatService {
         if (timeError != null) {
             throw new InvalidDataException(timeError);
         }
-        current.setMaterialCode(incoming.getMaterialCode());
+        current.setMaterialId(requireMaterialId(incoming.getMaterialCode()));
         current.setQuantity(incoming.getQuantity());
         current.setDeliveredAt(incoming.getDeliveredAt());
         if (incoming.getUserId() != null) {
@@ -171,7 +179,71 @@ public class HeatService {
         List<MaterialUsage> materials = materialUsageRepository.findByHeatId(heat.getId());
         fillMaterialNames(materials);
         return new HeatDetailResponse(heat, materials,
-                operatorService.findForHeat(heat.getOperatorId()));
+                operatorService.findForHeat(heat.getOperatorId()),
+                heatPhotoRepository.findByHeatIdOrderByIdAsc(heat.getId().longValue()));
+    }
+
+    // The photo row of a heat, for the download endpoint. Runs through requireHeat first, so
+    // an unknown heat is a 404 and another converter's heat a 403 - the photo of a heat the
+    // user may not see cannot be fetched by guessing its id either.
+    public HeatPhoto requirePhoto(Integer heatId, Long photoId) {
+        requireHeat(heatId);
+        return heatPhotoRepository.findById(photoId)
+                .filter(p -> Long.valueOf(heatId).equals(p.getHeatId()))
+                .orElseThrow(() -> new RecordNotFoundException("Fotoğraf bulunamadı"));
+    }
+
+    // Adds a photo to a heat from the panel (the mobile app writes the very same table and
+    // bucket). requireHeat first: an unknown heat is a 404, another converter's heat a 403.
+    // The file goes into the bucket first and the row is written afterwards, so a failed
+    // upload cannot leave a record pointing at a file that is not there.
+    public HeatPhoto addPhoto(Integer heatId, MultipartFile file, Long userId) {
+        requireHeat(heatId);
+        if (file == null || file.isEmpty()) {
+            throw new InvalidDataException("Fotoğraf dosyası boş");
+        }
+        String contentType = file.getContentType();
+        if (contentType == null || !contentType.startsWith("image/")) {
+            throw new InvalidDataException("Sadece resim dosyası yüklenebilir");
+        }
+
+        // The name in the bucket is ours (uuid + the extension of the original file), so an
+        // upload cannot overwrite another one and a crafted file name cannot escape the
+        // dokum/<id>/ folder. The name the user sees is kept in dosya_adi.
+        String originalName = file.getOriginalFilename() == null ? "" : file.getOriginalFilename();
+        String extension = originalName.contains(".")
+                ? originalName.substring(originalName.lastIndexOf('.')).toLowerCase()
+                : "";
+        if (!extension.matches("\\.[a-z0-9]{1,5}")) {
+            extension = "";
+        }
+        String path = "dokum/" + heatId + "/" + UUID.randomUUID() + extension;
+
+        byte[] bytes;
+        try {
+            bytes = file.getBytes();
+        } catch (IOException ex) {
+            throw new InvalidDataException("Fotoğraf okunamadı");
+        }
+        supabaseStorage.upload(path, bytes, contentType);
+
+        HeatPhoto photo = new HeatPhoto();
+        photo.setHeatId(Long.valueOf(heatId));
+        photo.setFileName(originalName.isBlank() ? "fotograf" + extension : originalName);
+        photo.setContentType(contentType);
+        photo.setSizeBytes((long) bytes.length);
+        photo.setUploadedByUserId(userId);
+        photo.setUploadedAt(LocalDateTime.now());
+        photo.setStoragePath(path);
+        return heatPhotoRepository.save(photo);
+    }
+
+    // Deletes a photo of a heat: the file in the bucket first, the row afterwards. The checks
+    // are done by requirePhoto (unknown heat or photo -> 404, another converter's heat -> 403).
+    public void deletePhoto(Integer heatId, Long photoId) {
+        HeatPhoto photo = requirePhoto(heatId, photoId);
+        supabaseStorage.delete(photo.getStoragePath());
+        heatPhotoRepository.delete(photo);
     }
 
     // ---- Internal helpers ----
@@ -273,26 +345,37 @@ public class HeatService {
         return null;
     }
 
-    // Fills the material name and type matching malzeme_kodu into the material usages.
-    // malzeme_tablosu is fetched in a single query and turned into a code -> Material map
-    // (so there is no N+1).
+    // The malzeme_id of a usage only says which row it points at, so the code, name and type
+    // are filled in from malzeme_Tanim. One query for the whole list (no N+1).
     private void fillMaterialNames(List<MaterialUsage> materials) {
         if (materials.isEmpty()) {
             return;
         }
-        List<Integer> codes = materials.stream()
-                .map(MaterialUsage::getMaterialCode)
-                .filter(c -> c != null)
+        List<Integer> ids = materials.stream()
+                .map(MaterialUsage::getMaterialId)
+                .filter(id -> id != null)
                 .distinct()
                 .collect(Collectors.toList());
-        Map<Integer, Material> materialsByCode = materialRepository.findByCodeIn(codes).stream()
-                .collect(Collectors.toMap(Material::getCode, m -> m, (first, second) -> first));
+        Map<Integer, Material> materialsById = materialRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(Material::getId, m -> m, (first, second) -> first));
         for (MaterialUsage usage : materials) {
-            Material material = materialsByCode.get(usage.getMaterialCode());
+            Material material = materialsById.get(usage.getMaterialId());
             if (material != null) {
+                usage.setMaterialCode(material.getCode());
                 usage.setMaterialName(material.getName());
                 usage.setMaterialType(material.getType());
             }
         }
+    }
+
+    // malzeme_kullanim stores malzeme_id, the client speaks malzeme_kodu. Unknown code -> 400,
+    // so a usage row can never point at a material that is not there.
+    private Integer requireMaterialId(Integer code) {
+        if (code == null) {
+            throw new InvalidDataException("malzemeKodu zorunludur");
+        }
+        return materialRepository.findByCode(code)
+                .orElseThrow(() -> new InvalidDataException(code + " kodlu malzeme bulunamadı"))
+                .getId();
     }
 }
